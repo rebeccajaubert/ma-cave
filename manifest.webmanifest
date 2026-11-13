@@ -1,0 +1,16 @@
+{
+  "name": "Ma Cave",
+  "short_name": "Ma Cave",
+  "description": "La cave à vin en 3D : chaque bouteille à sa place.",
+  "lang": "fr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f2a4d",
+  "theme_color": "#0f2a4d",
+  "icons": [
+    { "src": "icons/icon-180.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

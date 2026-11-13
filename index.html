@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Ma Cave</title>
+<meta name="theme-color" content="#0f2a4d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Ma Cave">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" type="image/png" href="icons/icon-180.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="scene"></canvas>
+
+<div id="topbar">
+  <div id="searchbox">
+    <span class="loupe">⌕</span>
+    <input id="search" type="search" placeholder="Rechercher une bouteille…" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="search">
+    <button id="searchClear" hidden aria-label="Effacer">✕</button>
+  </div>
+  <button id="menuBtn" aria-label="Menu">☰</button>
+</div>
+<div id="results" hidden></div>
+
+<div id="banner" hidden><span id="bannerText"></span><button id="bannerDone">Terminé</button></div>
+<div id="hint"></div>
+<nav id="nav">
+  <button data-view="overview">Vue<br>d'ensemble</button>
+  <button data-view="G">Mur<br>gauche</button>
+  <button data-view="IG">Îlot<br>gauche</button>
+  <button data-view="ID">Îlot<br>droit</button>
+  <button data-view="D">Mur<br>droit</button>
+</nav>
+<div id="toast" hidden></div>
+
+<div id="sheet" hidden>
+  <div id="sheetHead"><div id="sheetTitle"></div><button id="sheetClose" aria-label="Fermer">✕</button></div>
+  <div id="sheetBody"></div>
+</div>
+
+<div id="dialog" hidden><div id="dialogBox"><p id="dialogText"></p>
+  <div class="btns"><button class="btn" id="dialogCancel">Annuler</button><button class="btn primary" id="dialogOk">Continuer</button></div></div></div>
+
+<input id="photoInput" type="file" accept="image/*" hidden>
+<input id="importInput" type="file" accept="application/json,.json" hidden>
+<script type="module" src="app.js"></script>
+</body>
+</html>
