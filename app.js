@@ -1,47 +1,39 @@
 import * as THREE from './vendor/three.module.min.js';
+import { esc, clamp, norm, RACK_ORDER, RACK_NAMES, slotId, parseId, isValidId, DEFAULT_CONFIG, STYLES, DEFAULT_STYLE, rackLimits, normalizeConfig, rackSizes, rackSize, meters, recordsIn, LEGACY_CONFIG, needsLegacyConfig, cellLayout, drinkSoon, qty, totalBottles, suggestions, findKnownWine, inheritableFields } from './lib.js';
+import { openStore } from './db.js';
+import { getApiKey, setApiKey, clearApiKey, cleanApiKey, scanLabel, testApiKey, scanErrorMessage } from './scan.js';
 
 /* ============================================================
    Ma Cave — maquette 3D de la cave, façon plan d'architecte
    Une voûte en demi-cylindre, un îlot central, des casiers
    sur les deux murs et sur les deux faces de l'îlot.
-   Chaque emplacement contient une bouteille :
-   grise = pas encore enregistrée, colorée = enregistrée.
+   Un emplacement est soit « enregistré » (une fiche existe : la bouteille
+   apparaît dans le casier, avec son étiquette), soit « non enregistré »
+   (aucune fiche : rien n'apparaît).
+   Organisation : lib.js (fonctions pures testées), db.js (stockage local),
+   scan.js (lecture d'étiquette), app.js (scène 3D et interface).
    ============================================================ */
 
 const $ = (id) => document.getElementById(id);
-const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
-// ---------- Configuration ----------
-// Une seule longueur (colonnes) pour les deux murs et l'îlot ; hauteurs séparées.
-const DEFAULT_CONFIG = { nom: 'La Cave de Verdelot', cols: 12, rowsMur: 5, rowsIlot: 6 };
-const LIMITS = { cols: 40, rowsMur: 7, rowsIlot: 12 };
-const RACK_NAMES = { G: 'Mur gauche', IG: 'Îlot, côté gauche', ID: 'Îlot, côté droit', D: 'Mur droit' };
-const RACK_ORDER = ['G', 'IG', 'ID', 'D'];
-const CONFIG_KEY = 'cave-config-v3';
-
-function normalizeConfig(c) {
-  const out = { ...DEFAULT_CONFIG };
-  if (!c || typeof c !== 'object') return out;
-  if (c.nom && c.nom !== 'La Cave de Papa') out.nom = String(c.nom).slice(0, 40);
-  const num = (v, d, max) => clamp(parseInt(v) || d, 1, max);
-  if (c.racks) {   // ancien format : un réglage par casier
-    const r = c.racks, m = (...v) => Math.max(...v.map((x) => parseInt(x) || 0));
-    out.cols = num(m(r.G?.cols, r.D?.cols, r.IG?.cols, r.ID?.cols), out.cols, LIMITS.cols);
-    out.rowsMur = num(m(r.G?.rows, r.D?.rows), out.rowsMur, LIMITS.rowsMur);
-    out.rowsIlot = num(m(r.IG?.rows, r.ID?.rows), out.rowsIlot, LIMITS.rowsIlot);
-  } else {
-    out.cols = num(c.cols, out.cols, LIMITS.cols);
-    out.rowsMur = num(c.rowsMur, out.rowsMur, LIMITS.rowsMur);
-    out.rowsIlot = num(c.rowsIlot, out.rowsIlot, LIMITS.rowsIlot);
-  }
-  return out;
+// Juste après une mise à jour, le navigateur peut associer une ancienne page (sans les nouveaux éléments)
+// au nouveau code : on recharge une fois pour tout reprendre à jour, au lieu d'afficher un écran vide.
+if (['scene', 'sheet', 'nav', 'dialog', 'undoBtn', 'rackBtn'].some((id) => !$(id))) {
+  // Sans sessionStorage, on ne peut pas se souvenir de la tentative : on ne recharge pas (pas de boucle possible).
+  let retried = true; try { retried = !!sessionStorage.getItem('cave-reload'); sessionStorage.setItem('cave-reload', '1'); } catch { retried = true; }
+  if (!retried) location.reload();
+  throw new Error('Page incomplète (ancienne version en cache)');
 }
+try { sessionStorage.removeItem('cave-reload'); } catch { /* sans stockage */ }
+const APP_VERSION = self.APP_VERSION || '?';   // défini par version.js
+
+// ---------- Configuration (dimensions de la cave, gardées sur l'appareil) ----------
+const CONFIG_KEY = 'cave-config-v4';   // les anciennes clés (v3, v2) sont relues et converties par normalizeConfig
+
 function loadConfig() {
-  try { return normalizeConfig(JSON.parse(localStorage.getItem(CONFIG_KEY) || localStorage.getItem('cave-config-v2') || 'null')); }
+  try { return normalizeConfig(JSON.parse(localStorage.getItem(CONFIG_KEY) || localStorage.getItem('cave-config-v3') || localStorage.getItem('cave-config-v2') || 'null')); }
   catch { return { ...DEFAULT_CONFIG }; }
 }
-const rackSizes = (c) => ({ G: { cols: c.cols, rows: c.rowsMur }, D: { cols: c.cols, rows: c.rowsMur }, IG: { cols: c.cols, rows: c.rowsIlot }, ID: { cols: c.cols, rows: c.rowsIlot } });
 const config = loadConfig();
 
 // ---------- Couleurs de vin ----------
@@ -56,39 +48,34 @@ const TYPES = {
 const typeOf = (b) => TYPES[b?.couleur] || TYPES.rouge;
 const UNKNOWN_GLASS = 0x14220e;
 
-// ---------- Base de données (IndexedDB, sur l'iPhone) ----------
-const DB_NAME = 'cave-a-vin', STORE = 'bouteilles';
-let db;
-function openDB() {
-  return new Promise((res, rej) => {
-    const r = indexedDB.open(DB_NAME, 1);
-    r.onupgradeneeded = () => r.result.createObjectStore(STORE, { keyPath: 'id' });
-    r.onsuccess = () => res(r.result);
-    r.onerror = () => rej(r.error);
-  });
-}
-function dbOp(mode, fn) {
-  if (!db) return Promise.resolve();   // stockage indisponible : l'app reste utilisable pour la séance
-  return new Promise((res, rej) => {
-    const tx = db.transaction(STORE, mode);
-    const out = fn(tx.objectStore(STORE));
-    tx.oncomplete = () => res(out?.result);
-    tx.onerror = () => rej(tx.error);
-    tx.onabort = () => rej(tx.error);
-  });
-}
-// Un emplacement sans fiche = bouteille non enregistrée : rien n'apparaît dans le casier.
-const records = new Map();
-const slotId = (k, c, r) => `${k}:${c}:${r}`;
-const parseId = (id) => { const [k, c, r] = id.split(':'); return { k, c: +c, r: +r }; };
+// ---------- Fiches : en mémoire, et enregistrées sur l'appareil à chaque modification ----------
+let store = null;                // accès à la base locale (null si le stockage est indisponible)
+const records = new Map();       // identifiant d'emplacement -> fiche
 const bottleAt = (id) => { const b = records.get(id); return b && !b.vide ? b : null; };
 const allBottles = () => [...records.values()].filter((b) => !b.vide);
-async function saveRecord(b) { records.set(b.id, b); await dbOp('readwrite', (s) => s.put(b)); }
-async function deleteRecord(id) { records.delete(id); await dbOp('readwrite', (s) => s.delete(id)); }
 
+/**
+ * Exécute une écriture sur la base locale. Renvoie true si on peut poursuivre (écriture réussie,
+ * ou stockage indisponible : la modification vit alors le temps de la séance, l'utilisateur est prévenu).
+ * Renvoie false si l'écriture a échoué : l'appelant ne doit alors RIEN changer à l'écran ni en mémoire.
+ */
+async function persist(op) {
+  if (!store) { toast('Stockage indisponible : cette modification ne sera pas conservée à la fermeture'); return true; }
+  try { await op(store); return true; }
+  catch (e) { console.error(e); toast('Enregistrement impossible (espace plein ou stockage bloqué)'); return false; }
+}
+/** Message de succès ; sans stockage, dit honnêtement que la modification ne sera pas conservée. */
+const saved = (msg) => toast(store ? msg : 'Gardé jusqu\'à la fermeture de l\'app seulement (stockage indisponible)');
+/** Enregistre une fiche : d'abord sur l'appareil, puis en mémoire (jamais l'inverse). */
+async function saveRecord(b) { const ok = await persist((s) => s.put(b)); if (ok) records.set(b.id, b); return ok; }
+/** Supprime une fiche : d'abord sur l'appareil, puis en mémoire. */
+async function deleteRecord(id) { const ok = await persist((s) => s.remove(id)); if (ok) records.delete(id); return ok; }
+
+/** Type de rangement d'un casier (alvéoles, cases maçonnées…). */
+const styleOf = (k) => STYLES[rk[k]?.style] || STYLES[DEFAULT_STYLE];
 function locText(id) {
   const { k, c, r } = parseId(id);
-  return `<b>${RACK_NAMES[k] || k}</b> · colonne <b>${c + 1}</b> depuis l'entrée · rangée <b>${r + 1}</b> depuis le bas`;
+  return `<b>${RACK_NAMES[k] || k}</b> · ${styleOf(k).lieu} en colonne <b>${c + 1}</b> depuis l'entrée · rangée <b>${r + 1}</b> depuis le bas`;
 }
 function locShort(id) {
   const { k, c, r } = parseId(id);
@@ -96,22 +83,26 @@ function locShort(id) {
 }
 
 // ---------- Géométrie de la cave (mètres, schématique) ----------
-const P = 0.2;            // taille d'un emplacement
 const BASE = 0.12;        // socle sous les casiers
 const R = 2.6;            // rayon de la voûte (demi-largeur de la cave)
-const WALL_H = 0.3;       // petit mur droit sous la voûte
 const RACK_D = 0.4;       // profondeur des casiers muraux
-const ISLAND_W = 1.0;     // largeur de l'îlot central
-
-const rk = rackSizes(config);
-const islandLen = Math.max(rk.IG.cols, rk.ID.cols) * P + 0.2;
-const islandH = BASE + Math.max(rk.IG.rows, rk.ID.rows) * P + 0.08;
-const outerLen = Math.max(rk.G.cols, rk.D.cols) * P;
-const L = Math.max(outerLen + 1.2, islandLen + 2.8);
+const ISLAND_W = 1.0;     // largeur de l'îlot central : deux meubles de RACK_D dos à dos, avec un petit passage entre eux
 const RACK_FRONT_X = R - RACK_D;
 
+const rk = rackSizes(config);
+/** Pour chaque casier : taille d'un emplacement (cw × ch) et du casier entier (W × H), selon son type de rangement. */
+const dims = Object.fromEntries(RACK_ORDER.map((k) => {
+  const st = STYLES[rk[k].style];
+  return [k, { cw: st.w, ch: st.h, W: rk[k].cols * st.w, H: rk[k].rows * st.h }];
+}));
+const islandLen = Math.max(dims.IG.W, dims.ID.W) + 0.2;
+const outerLen = Math.max(dims.G.W, dims.D.W);
+const L = Math.max(outerLen + 1.2, islandLen + 2.8);
+// Petit mur droit sous la voûte : rehaussé si les casiers muraux sont hauts, pour qu'ils restent sous la voûte.
+const WALL_H = Math.max(0.3, BASE + Math.max(dims.G.H, dims.D.H) + 0.1 - Math.sqrt(R * R - RACK_FRONT_X * RACK_FRONT_X));
+
 // ---------- Palette « plan d'architecte » ----------
-const C = { fond: 0x0f2a4d, trait: 0x9cc4ee, casier: 0xc9d6e6, ilot: 0xdbe4ef, arete: 0x24456f, sel: 0x0b1f3a, trouve: 0xff7a00 };
+const C = { fond: 0x0f2a4d, trait: 0x9cc4ee, casier: 0xc9d6e6, arete: 0x24456f, sel: 0x0b1f3a, trouve: 0xff7a00 };
 
 // ---------- Rendu ----------
 const canvas = $('scene');
@@ -182,14 +173,50 @@ const decor = new THREE.Group(); scene.add(decor);   // masqué quand on regarde
 // ---------- Casiers ----------
 const racks = {};   // clé -> { group, plane, body, cols, rows, flip, W, H, discs, rings, normal, label }
 const tmpM = new THREE.Matrix4(), tmpC = new THREE.Color(), tmpV = new THREE.Vector3();
-const cellTex = canvasTex(128, 128, (g, w, h) => {
-  g.fillStyle = '#eef3f9'; g.fillRect(0, 0, w, h);
-  g.strokeStyle = '#c2d0e2'; g.lineWidth = 3; g.strokeRect(0, 0, w, h);
-  const hole = g.createRadialGradient(w / 2, h / 2 + 8, 8, w / 2, h / 2, 50);
-  hole.addColorStop(0, '#1b2f4c'); hole.addColorStop(0.75, '#2b4467'); hole.addColorStop(1, '#5f7da3');
-  g.fillStyle = hole; g.beginPath(); g.arc(w / 2, h / 2, 49, 0, 7); g.fill();
-  g.strokeStyle = '#ffffff'; g.lineWidth = 3; g.beginPath(); g.arc(w / 2, h / 2, 51, 0.5, 2.6); g.stroke();
-}, true);
+/** Dessin d'un emplacement vide, par type de rangement (vu de face, depuis l'allée). */
+const CELL_DRAW = {
+  alveoles(g, w, h) {
+    g.fillStyle = '#eef3f9'; g.fillRect(0, 0, w, h);
+    g.strokeStyle = '#c2d0e2'; g.lineWidth = 3; g.strokeRect(0, 0, w, h);
+    const r = 0.38 * Math.min(w, h), hole = g.createRadialGradient(w / 2, h / 2 + r * 0.15, r * 0.15, w / 2, h / 2, r);
+    hole.addColorStop(0, '#1b2f4c'); hole.addColorStop(0.75, '#2b4467'); hole.addColorStop(1, '#5f7da3');
+    g.fillStyle = hole; g.beginPath(); g.arc(w / 2, h / 2, r, 0, 7); g.fill();
+    g.strokeStyle = '#ffffff'; g.lineWidth = 3; g.beginPath(); g.arc(w / 2, h / 2, r + 2, 0.5, 2.6); g.stroke();
+  },
+  metal(g, w, h) {   // casier en fil de fer : fond sombre, deux fils ondulés
+    g.fillStyle = '#d9e1ea'; g.fillRect(0, 0, w, h);
+    const hole = g.createRadialGradient(w / 2, h / 2, 4, w / 2, h / 2, w * 0.48);
+    hole.addColorStop(0, '#22334a'); hole.addColorStop(1, '#8798ad');
+    g.fillStyle = hole; g.fillRect(0, h * 0.08, w, h * 0.84);
+    g.strokeStyle = '#3d4b5e'; g.lineWidth = 5;
+    for (const y of [h * 0.06, h * 0.94]) {
+      g.beginPath(); for (let x = 0; x <= w; x += 4) g.lineTo(x, y + Math.sin((x / w) * Math.PI * 2) * h * 0.03); g.stroke();
+    }
+  },
+  cases(g, w, h) {   // case maçonnée : montants noirs, étagère en béton, intérieur ombré
+    const inner = g.createLinearGradient(0, 0, 0, h);
+    inner.addColorStop(0, '#7f8b99'); inner.addColorStop(1, '#b9c1cb');
+    g.fillStyle = inner; g.fillRect(0, 0, w, h);
+    g.fillStyle = '#1f2630'; g.fillRect(0, 0, w * 0.035, h); g.fillRect(w * 0.965, 0, w * 0.035, h);
+    g.fillStyle = '#d8dde3'; g.fillRect(0, h * 0.9, w, h * 0.1);
+    g.fillStyle = '#2a323d'; g.fillRect(0, h * 0.9, w, h * 0.015);
+  },
+  caisses(g, w, h) {   // caisse en bois : cadre en planches, intérieur sombre
+    g.fillStyle = '#b8875a'; g.fillRect(0, 0, w, h);
+    g.fillStyle = '#4a3426'; g.fillRect(w * 0.06, h * 0.1, w * 0.88, h * 0.8);
+    g.strokeStyle = '#8c6239'; g.lineWidth = 3; g.strokeRect(2, 2, w - 4, h - 4);
+    g.beginPath(); g.moveTo(0, h * 0.5); g.lineTo(w * 0.06, h * 0.5); g.moveTo(w * 0.94, h * 0.5); g.lineTo(w, h * 0.5); g.stroke();
+  },
+};
+const cellTexCache = {};
+/** Texture d'un emplacement à la bonne proportion (largeur × hauteur du type de rangement). */
+function cellTexture(style) {
+  if (!cellTexCache[style]) {
+    const st = STYLES[style], W = 256, H = Math.round(256 * st.h / st.w);
+    cellTexCache[style] = canvasTex(W, H, CELL_DRAW[style] || CELL_DRAW.alveoles, true);
+  }
+  return cellTexCache[style];
+}
 // Reflets : un petit « studio » lumineux que le verre reflète, pour un rendu réaliste.
 {
   const env = new THREE.Scene();
@@ -207,13 +234,15 @@ const BOTTLE_OUT = 0.07;
 const glassGeo = new THREE.LatheGeometry([[0.0745, -0.07], [0.0745, BOTTLE_OUT - 0.02], [0.073, BOTTLE_OUT - 0.009], [0.068, BOTTLE_OUT - 0.002], [0.06, BOTTLE_OUT],
   [0.052, BOTTLE_OUT - 0.003], [0.044, BOTTLE_OUT - 0.012], [0.03, BOTTLE_OUT - 0.03], [0.014, BOTTLE_OUT - 0.042], [0, BOTTLE_OUT - 0.046]].map(([r, y]) => new THREE.Vector2(r, y)), 36).rotateX(Math.PI / 2);
 const glassMat = new THREE.MeshStandardMaterial({ roughness: 0.1, metalness: 0, envMapIntensity: 1.5 });
+
+// Disposition des bouteilles dans un emplacement : cellLayout() dans lib.js.
 const ringGeo = new THREE.RingGeometry(0.08, 0.099, 32);
 const ringMat = new THREE.MeshBasicMaterial({ color: C.trouve, transparent: true, depthTest: false });
 const edgeMat = new THREE.LineBasicMaterial({ color: C.arete });
 function withEdges(mesh) { mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry), edgeMat)); return mesh; }
 function makeLabel(text, key) {
   const tex = canvasTex(512, 128, (g, w, h) => {
-    g.fillStyle = '#ffffff'; g.beginPath(); g.roundRect(4, 14, w - 8, h - 28, 50); g.fill();
+    g.fillStyle = '#ffffff'; g.beginPath(); if (g.roundRect) g.roundRect(4, 14, w - 8, h - 28, 50); else g.rect(4, 14, w - 8, h - 28); g.fill();   // roundRect : Safari 16+
     g.fillStyle = '#10294a'; g.textAlign = 'center'; g.textBaseline = 'middle';
     g.font = '600 50px -apple-system, "Helvetica Neue", sans-serif'; g.fillText(text, w / 2, h / 2 + 3);
   });
@@ -221,10 +250,9 @@ function makeLabel(text, key) {
   s.scale.set(1.5, 0.375, 1); s.renderOrder = 10; s.userData.rack = key; decor.add(s); return s;
 }
 function makeRack(key, x, rotY, flip, hasBody, labelText) {
-  const { cols, rows } = rk[key];
-  const W = cols * P, H = rows * P;
+  const { cols, rows, style } = rk[key], { cw, ch, W, H } = dims[key], st = STYLES[style], layout = cellLayout(style);
   const group = new THREE.Group(); group.position.set(x, 0, 0); group.rotation.y = rotY; scene.add(group);
-  const tex = cellTex.clone(); tex.needsUpdate = true; tex.repeat.set(cols, rows);
+  const tex = cellTexture(style).clone(); tex.needsUpdate = true; tex.repeat.set(cols, rows);
   const plane = new THREE.Mesh(new THREE.PlaneGeometry(W, H), new THREE.MeshBasicMaterial({ map: tex }));
   plane.position.set(0, BASE + H / 2, 0.004); plane.userData.rack = key; group.add(plane);
   let body = null;
@@ -232,20 +260,22 @@ function makeRack(key, x, rotY, flip, hasBody, labelText) {
     body = withEdges(new THREE.Mesh(new THREE.BoxGeometry(W + 0.06, BASE + H + 0.04, RACK_D), new THREE.MeshBasicMaterial({ color: C.casier })));
     body.position.set(0, (BASE + H + 0.04) / 2, -RACK_D / 2); body.userData.rack = key; group.add(body);
   }
-  const n = cols * rows;
+  const n = cols * rows * layout.pts.length;   // nombre maximal de bouteilles visibles dans ce casier
+  // Toutes les bouteilles sont montrées culot vers l'allée (bouchon caché), quel que soit le rangement réel.
   const glass = new THREE.InstancedMesh(glassGeo, glassMat, n);
-  const rings = new THREE.InstancedMesh(ringGeo, ringMat, n);
+  const rings = new THREE.InstancedMesh(ringGeo, ringMat, cols * rows);
   for (const m of [glass, rings]) { m.count = 0; m.frustumCulled = false; group.add(m); }
   rings.renderOrder = 5;
   group.updateMatrixWorld(true);
   const normal = new THREE.Vector3(0, 0, 1).applyQuaternion(group.quaternion);
   const label = makeLabel(labelText, key);
   label.position.set(x + normal.x * (hasBody ? -RACK_D / 2 : 0.55), BASE + H + (hasBody ? 0.4 : 0.6), (key === 'G' || key === 'ID' ? -1 : 1) * W * 0.22);
-  racks[key] = { key, group, plane, body, cols, rows, flip, W, H, glass, rings, normal, label };
+  const ringS = Math.min(cw, ch) / 0.2;   // anneaux de sélection et de recherche à la taille de l'emplacement
+  racks[key] = { key, group, plane, body, cols, rows, flip, cw, ch, W, H, layout, glass, rings, ringS, normal, label };
 }
 function slotLocal(rack, c, r) {
   const ci = rack.flip ? rack.cols - 1 - c : c;
-  return [(ci + 0.5) * P - rack.W / 2, BASE + (r + 0.5) * P];
+  return [(ci + 0.5) * rack.cw - rack.W / 2, BASE + (r + 0.5) * rack.ch];
 }
 function slotWorld(key, c, r, out = new THREE.Vector3()) {
   const rack = racks[key]; const [lx, ly] = slotLocal(rack, c, r);
@@ -256,33 +286,39 @@ const inRack = (key, c, r) => racks[key] && c >= 0 && r >= 0 && c < racks[key].c
 // Colonne 1 = toujours la plus proche de l'entrée
 makeRack('G', -RACK_FRONT_X, Math.PI / 2, false, true, 'Mur gauche');
 makeRack('D', RACK_FRONT_X, -Math.PI / 2, true, true, 'Mur droit');
-makeRack('IG', -ISLAND_W / 2, -Math.PI / 2, true, false, 'Îlot gauche');
-makeRack('ID', ISLAND_W / 2, Math.PI / 2, false, false, 'Îlot droit');
-const island = withEdges(new THREE.Mesh(new THREE.BoxGeometry(ISLAND_W - 0.01, islandH, islandLen), new THREE.MeshBasicMaterial({ color: C.ilot })));
-island.position.y = islandH / 2; island.userData.island = true; scene.add(island);
+// L'îlot est fait de deux casiers dos à dos, chacun avec son propre meuble (comme les murs) :
+// chaque face a sa longueur et sa hauteur, sans grand bloc commun.
+makeRack('IG', -ISLAND_W / 2, -Math.PI / 2, true, true, 'Îlot gauche');
+makeRack('ID', ISLAND_W / 2, Math.PI / 2, false, true, 'Îlot droit');
 
 // ---------- Pastilles des bouteilles ----------
 let hiddenId = null;     // bouteille « sortie » (présentée en gros plan)
+const tmpP = new THREE.Vector3(), tmpS = new THREE.Vector3(), IDQ = new THREE.Quaternion();
+/** Redessine les bouteilles enregistrées dans les casiers (plusieurs par emplacement selon la quantité et le type de rangement). */
 function rebuildBottles() {
   for (const k of RACK_ORDER) {
-    const rack = racks[k]; let i = 0;
+    const rack = racks[k], { pts, s } = rack.layout; let i = 0;
+    tmpS.setScalar(s);
     for (let c = 0; c < rack.cols; c++) for (let r = 0; r < rack.rows; r++) {
       const id = slotId(k, c, r), rec = bottleAt(id);
       if (!rec || id === hiddenId) continue;   // non enregistrée : l'emplacement reste vide à l'écran
-      const [lx, ly] = slotLocal(rack, c, r);
-      rack.glass.setMatrixAt(i, tmpM.makeTranslation(lx, ly, 0));
-      rack.glass.setColorAt(i, tmpC.setHex(typeOf(rec).verre)); i++;
+      const [lx, ly] = slotLocal(rack, c, r), t = typeOf(rec);
+      for (let j = Math.min(pts.length, qty(rec)) - 1; j >= 0; j--) {
+        tmpM.compose(tmpP.set(lx + pts[j][0], ly + pts[j][1], pts[j][2]), IDQ, tmpS);
+        rack.glass.setMatrixAt(i, tmpM); rack.glass.setColorAt(i, tmpC.setHex(t.verre));
+        i++;
+      }
     }
     rack.glass.count = i; rack.glass.instanceMatrix.needsUpdate = true; if (rack.glass.instanceColor) rack.glass.instanceColor.needsUpdate = true;
   }
 }
-let highlighted = [];    // identifiants mis en évidence par la recherche
+let highlighted = [];    // identifiants mis en évidence par la recherche (anneaux orange)
 function rebuildRings() {
   const count = {}; for (const k of RACK_ORDER) count[k] = 0;
   for (const id of highlighted) {
     const { k, c, r } = parseId(id); if (!inRack(k, c, r)) continue;
     const rack = racks[k], [lx, ly] = slotLocal(rack, c, r);
-    rack.rings.setMatrixAt(count[k]++, tmpM.makeTranslation(lx, ly, BOTTLE_OUT + 0.004));
+    rack.rings.setMatrixAt(count[k]++, tmpM.compose(tmpP.set(lx, ly, BOTTLE_OUT + 0.004), IDQ, tmpS.setScalar(rack.ringS)));
   }
   for (const k of RACK_ORDER) { racks[k].rings.count = count[k]; racks[k].rings.instanceMatrix.needsUpdate = true; }
 }
@@ -295,13 +331,15 @@ const cam = { pos: new THREE.Vector3(), tgt: new THREE.Vector3(), ready: false }
 const goalPos = new THREE.Vector3(), goalTgt = new THREE.Vector3();
 const tanH = () => TAN_V * aspect;
 const fitDist = () => (Math.hypot(R, L / 2) + 0.4) / (TAN_V * Math.min(1, aspect)) * (aspect > 1 ? 1.25 : 0.8);
-const dFor = (n) => (n * P + 0.35) / 2 / tanH();
-const dMax = (rack) => Math.max(dFor(rack.cols), (rack.H + 0.9) / 2 / TAN_V);
-const dMin = () => dFor(3.2);
+const dFor = (width) => (width + 0.35) / 2 / tanH();                       // distance pour voir `width` mètres de casier
+const dMax = (rack) => Math.max(dFor(rack.W), (rack.H + 0.9) / 2 / TAN_V);   // tout le casier
+const dMin = (rack) => dFor(Math.max(0.25, 1.3 * rack.cw));                  // zoom maximal : une place de casier métallique fait ≈ 55 px
+// Largeur montrée à l'ouverture d'un casier : assez d'emplacements pour se repérer, assez grands pour être touchés du doigt.
+const viewW = (rack) => clamp(6 * rack.cw, 0.54, 1.4);
 function clampView() {
   if (view.mode !== 'rack') { view.zoom = clamp(view.zoom, 0.4, 1.35); view.el = clamp(view.el, 0.3, 1.5); return; }
   const rack = racks[view.key];
-  view.d = clamp(view.d, Math.min(dMin(), dMax(rack)), dMax(rack));
+  view.d = clamp(view.d, Math.min(dMin(rack), dMax(rack)), dMax(rack));
   const maxU = Math.max(0, rack.W / 2 - view.d * tanH() + 0.18);
   view.u = clamp(view.u, -maxU, maxU);
   view.v = clamp(view.v, -view.d * TAN_V, BASE + rack.H);
@@ -321,8 +359,8 @@ function applyVisibility() {
   const ov = view.mode === 'overview', k = view.key;
   decor.visible = ov;
   for (const key of RACK_ORDER) racks[key].group.visible = ov || key === k;
-  island.visible = ov || k === 'IG' || k === 'ID';
   document.querySelectorAll('#nav button').forEach((b) => b.classList.toggle('on', b.dataset.view === (ov ? 'overview' : k)));
+  $('rackBtn').hidden = ov;
   $('hint').textContent = ov ? 'Touchez un casier pour l\'ouvrir · glissez pour tourner la maquette'
     : 'Touchez une bouteille · glissez pour faire défiler le casier';
 }
@@ -330,13 +368,13 @@ function showOverview() { view.mode = 'overview'; view.key = null; applyVisibili
 function showRack(key) {
   const rack = racks[key];
   view.mode = 'rack'; view.key = key;
-  view.d = Math.min(dFor(Math.min(rack.cols, 7)), dMax(rack)); view.u = 0; view.v = BASE + rack.H / 2 + 0.1;
+  view.d = Math.min(dFor(Math.min(rack.W, viewW(rack))), dMax(rack)); view.u = 0; view.v = BASE + rack.H / 2 + 0.1;
   clampView(); applyVisibility();
 }
 function focusSlot(key, c, r) {
   const rack = racks[key], [lx, ly] = slotLocal(rack, c, r);
   if (view.mode !== 'rack' || view.key !== key) showRack(key);
-  view.d = Math.min(view.d, dFor(Math.min(rack.cols, 7)));
+  view.d = Math.min(view.d, dFor(Math.min(rack.W, viewW(rack))));
   view.u = lx; view.v = ly - 0.44 * view.d * TAN_V;   // l'emplacement apparaît dans le haut de l'écran, au-dessus de la fiche
   clampView();
 }
@@ -460,19 +498,19 @@ function pick(cx, cy) {
   if (view.mode === 'rack') {
     const rack = racks[view.key], h = raycaster.intersectObject(rack.plane, false)[0]; if (!h) return null;
     const l = rack.group.worldToLocal(tmpV.copy(h.point));
-    const ci = clamp(Math.floor((l.x + rack.W / 2) / P), 0, rack.cols - 1), r = clamp(Math.floor((l.y - BASE) / P), 0, rack.rows - 1);
+    const ci = clamp(Math.floor((l.x + rack.W / 2) / rack.cw), 0, rack.cols - 1), r = clamp(Math.floor((l.y - BASE) / rack.ch), 0, rack.rows - 1);
     return { type: 'slot', key: rack.key, c: rack.flip ? rack.cols - 1 - ci : ci, r };
   }
-  const targets = [island]; for (const k of RACK_ORDER) { const r = racks[k]; targets.push(r.plane); if (r.body) targets.push(r.body); }
+  const targets = []; for (const k of RACK_ORDER) { const r = racks[k]; targets.push(r.plane); if (r.body) targets.push(r.body); }
   const labelHit = raycaster.intersectObjects(RACK_ORDER.map((k) => racks[k].label), false)[0];
   const h = labelHit || raycaster.intersectObjects(targets, false)[0]; if (!h) return null;
   if (h.object.userData.rack) return { type: 'rack', key: h.object.userData.rack };
-  if (h.object.userData.island) return { type: 'rack', key: (Math.abs(h.point.x) > 0.3 ? h.point.x : camera.position.x) < 0 ? 'IG' : 'ID' };
   return null;
 }
 
 // ---------- État de l'interface ----------
 let selected = null;   // { key, c, r, id }
+let lastSlot = null;   // dernier emplacement touché, pour pré-remplir « Gérer ce casier »
 let mode = null;       // { type: 'copy' | 'move', source: fiche }
 let draftPhoto = null;
 
@@ -492,38 +530,54 @@ async function onTap(cx, cy) {
   if (hit.type === 'rack') { closeSheet(); showRack(hit.key); return; }
   await tapSlot(hit);
 }
+/** Touche sur un emplacement : en mode « copie/déplacement », range la fiche ici ; sinon ouvre l'emplacement. */
+let slotBusy = false;   // évite qu'un double toucher rapide range la même bouteille à deux endroits
 async function tapSlot(hit) {
   const id = slotId(hit.key, hit.c, hit.r);
-  if (mode) {
+  if (!mode) return selectSlot(hit.key, hit.c, hit.r);
+  if (slotBusy) return;
+  slotBusy = true;
+  try {
     if (bottleAt(id)) return toast('Il y a déjà une bouteille enregistrée ici');
-    const copy = { ...mode.source, id, ajout: Date.now() };
-    if (mode.type === 'move') { await deleteRecord(mode.source.id); await saveRecord(copy); endMode(); refresh(); selectSlot(hit.key, hit.c, hit.r); toast('Bouteille déplacée'); }
-    else { await saveRecord(copy); refresh(); toast('Bouteille enregistrée ici aussi'); }
-    return;
-  }
-  selectSlot(hit.key, hit.c, hit.r);
+    // On repart de la fiche actuelle : elle a pu être modifiée ou retirée depuis le début du mode.
+    const src = bottleAt(mode.source.id);
+    if (!src) { endMode(); return toast('Cette bouteille n\'est plus dans la cave'); }
+    const copy = { ...src, quantite: mode.type === 'copy' ? qty(mode.source) : src.quantite, id, ajout: Date.now() };
+    delete copy.demo;                                       // une fiche rangée par l'utilisateur n'est plus une bouteille d'exemple
+    if (!await saveRecord(copy)) return;                    // on enregistre la nouvelle place AVANT de libérer l'ancienne
+    if (mode.type === 'move') {
+      if (!await deleteRecord(src.id)) {                    // l'ancienne place n'a pas pu être libérée : retour arrière
+        const undone = await deleteRecord(id);
+        return toast(undone ? 'Déplacement impossible : rien n\'a changé' : 'Déplacement incomplet : la bouteille est maintenant aux deux places, retirez-en une');
+      }
+      endMode(); refresh(); selectSlot(hit.key, hit.c, hit.r); saved('Bouteille déplacée');
+    } else { mode.added++; updateBanner(); refresh(); saved('Enregistrée ici aussi'); }
+  } finally { slotBusy = false; }
 }
 function refresh() { rebuildBottles(); if ($('search').value.trim()) runSearch(false); }
 
 function selectSlot(key, c, r) {
   if (!inRack(key, c, r)) return toast('Cet emplacement n\'existe plus avec les dimensions actuelles');
   hideHero();
-  const id = slotId(key, c, r); selected = { key, c, r, id };
+  const id = slotId(key, c, r); selected = { key, c, r, id }; lastSlot = selected;
   focusSlot(key, c, r);
   slotWorld(key, c, r, selRing.position).addScaledVector(racks[key].normal, BOTTLE_OUT + 0.005);
-  selRing.quaternion.copy(racks[key].group.quaternion); selRing.visible = true;
+  selRing.quaternion.copy(racks[key].group.quaternion); selRing.scale.setScalar(racks[key].ringS); selRing.visible = true;
   const b = bottleAt(id);
   presentBottle(b, key, c, r);
   if (b) showCard(b); else showUnknown(id);
 }
 
 // ---------- Fiche (panneau du bas) ----------
+let scanToken = 0;   // invalide une lecture d'étiquette arrivée après que le formulaire a été quitté
+
 function openSheet(title, html, tall = false) {
   $('sheetTitle').textContent = title; $('sheetBody').innerHTML = html;
   $('sheet').classList.toggle('tall', tall); $('sheet').hidden = false; $('sheetBody').scrollTop = 0;
   $('results').hidden = true;
 }
 function closeSheet() {
+  scanToken++;
   const had = selected; $('sheet').hidden = true; $('sheetBody').innerHTML = ''; hideHero(); selRing.visible = false; selected = null;
   if (had && view.mode === 'rack') { view.v = BASE + racks[view.key].H / 2 + 0.1; clampView(); }
 }
@@ -535,10 +589,11 @@ function showUnknown(id) {
     <div class="btns"><button class="btn primary block" data-act="add">Enregistrer cette bouteille</button></div>`);
 }
 function showCard(b) {
-  const t = typeOf(b), f = [];
+  const t = typeOf(b), q = qty(b), f = [];
   const add = (k, v) => v && f.push(`<dt>${k}</dt><dd>${esc(v)}</dd>`);
   add('Couleur', t.nom); add('Millésime', b.millesime); add('Appellation', b.appellation); add('Région', b.region);
   add('Cépage', b.cepage); add('À boire', b.apogee); add('Prix', b.prix && `${b.prix} €`); add('Note', b.note && `${b.note} / 20`);
+  add('Quantité', q > 1 ? `${q} bouteilles dans cette ${styleOf(parseId(b.id).k).lieu}` : '');
   openSheet(`${b.nom || 'Sans nom'}${b.millesime ? ' · ' + b.millesime : ''}`, `
     <div class="loc">${locText(b.id)}</div>
     ${b.photo ? `<img class="photo" src="${esc(b.photo)}" alt="Étiquette">` : ''}
@@ -548,73 +603,191 @@ function showCard(b) {
       <button class="btn primary block" data-act="edit">Modifier la fiche</button>
       <button class="btn" data-act="copy">J'ai la même ailleurs</button>
       <button class="btn" data-act="move">Déplacer</button>
-      <button class="btn danger block" data-act="remove">Bouteille bue : la retirer</button>
+      <button class="btn danger block" data-act="drink">${q > 1 ? `J'ai bu une bouteille (il en restera ${q - 1})` : 'Bouteille bue : la retirer'}</button>
+      ${q > 1 ? `<button class="btn danger block" data-act="remove">Vider cette ${styleOf(parseId(b.id).k).lieu} (${q} bouteilles)</button>` : ''}
     </div>`);
 }
-function showForm(id) {
-  const b = bottleAt(id) || { couleur: 'rouge' };
+
+/**
+ * Formulaire de fiche. `draft` permet de le réafficher (après une photo, par exemple)
+ * sans perdre ce qui a déjà été saisi.
+ */
+function showForm(id, draft = null) {
+  scanToken++;
+  const st = styleOf(parseId(id).k), existing = bottleAt(id), b = draft ?? existing ?? { couleur: 'rouge', quantite: st.defaut };
   draftPhoto = b.photo || null;
-  const v = (k) => esc(b[k] ?? '');
-  openSheet(bottleAt(id) ? 'Modifier la fiche' : 'Nouvelle fiche', `
+  const v = (k) => esc(b[k] ?? ''), hasKey = !!getApiKey();
+  const known = allBottles().filter((x) => x.id !== id);
+  // Suggestions de saisie : valeurs déjà utilisées dans les autres fiches
+  const options = (field) => suggestions(known, field).slice(0, 200).map((x) => `<option value="${esc(x)}"></option>`).join('');
+  openSheet(existing ? 'Modifier la fiche' : 'Nouvelle fiche', `
     <form id="form" data-id="${id}" autocomplete="off">
       <div class="loc">${locText(id)}</div>
       <div class="field">Étiquette
         <div id="photoZone">${draftPhoto ? `<img class="photo" src="${esc(draftPhoto)}" alt="">` : ''}</div>
         <div class="btns"><button type="button" class="btn" data-act="photo">${draftPhoto ? 'Changer la photo' : 'Photographier l\'étiquette'}</button>
+        ${draftPhoto && hasKey ? '<button type="button" class="btn" data-act="scan">Lire l\'étiquette</button>' : ''}
         ${draftPhoto ? '<button type="button" class="btn danger" data-act="nophoto">Retirer</button>' : ''}</div>
+        <div id="scanStatus" class="scan" role="status" aria-live="polite">${hasKey ? '' : 'Astuce : activez « Lecture des étiquettes » dans le menu pour remplir la fiche à partir de la photo.'}</div>
       </div>
-      <label>Nom / Domaine / Château<input name="nom" value="${v('nom')}" placeholder="Château Margaux" required></label>
+      <label>Nom / Domaine / Château<input name="nom" list="dl-nom" value="${v('nom')}" placeholder="Château Margaux" required></label>
       <div class="field">Couleur
         <div class="chips" id="chips">${Object.entries(TYPES).map(([k, t]) =>
           `<button type="button" class="chip${(b.couleur || 'rouge') === k ? ' on' : ''}" data-couleur="${k}"><span class="dot" style="background:${t.css}"></span>${t.nom}</button>`).join('')}</div>
       </div>
+      ${st.unique ? '<input type="hidden" name="quantite" value="1">' /* casier métallique : une seule bouteille par place */ : `<div class="field">Nombre de bouteilles dans cette ${st.lieu}
+        <div class="stepper">
+          <button type="button" class="btn" data-step="-1" aria-label="Une bouteille de moins">−</button>
+          <input name="quantite" value="${qty(b)}" inputmode="numeric" pattern="[0-9]*" maxlength="2" aria-label="Nombre de bouteilles">
+          <button type="button" class="btn" data-step="1" aria-label="Une bouteille de plus">+</button>
+        </div>
+      </div>`}
       <div class="two">
         <label>Millésime<input name="millesime" value="${v('millesime')}" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="2015"></label>
         <label>À boire jusqu'en<input name="apogee" value="${v('apogee')}" placeholder="2030"></label>
       </div>
-      <label>Appellation<input name="appellation" value="${v('appellation')}" placeholder="Margaux"></label>
+      <label>Appellation<input name="appellation" list="dl-appellation" value="${v('appellation')}" placeholder="Margaux"></label>
       <div class="two">
-        <label>Région<input name="region" value="${v('region')}" placeholder="Bordeaux"></label>
-        <label>Cépage<input name="cepage" value="${v('cepage')}" placeholder="Cabernet…"></label>
+        <label>Région<input name="region" list="dl-region" value="${v('region')}" placeholder="Bordeaux"></label>
+        <label>Cépage<input name="cepage" list="dl-cepage" value="${v('cepage')}" placeholder="Cabernet…"></label>
       </div>
       <div class="two">
         <label>Prix (€)<input name="prix" value="${v('prix')}" inputmode="decimal"></label>
         <label>Note (/20)<input name="note" value="${v('note')}" inputmode="decimal"></label>
       </div>
       <label>Commentaires<textarea name="commentaire" placeholder="Offerte par…, à ouvrir pour…">${v('commentaire')}</textarea></label>
-      <div class="btns"><button type="button" class="btn" data-act="cancel">Annuler</button><button type="submit" class="btn primary">Enregistrer</button></div>
+      <datalist id="dl-nom">${options('nom')}</datalist><datalist id="dl-appellation">${options('appellation')}</datalist>
+      <datalist id="dl-region">${options('region')}</datalist><datalist id="dl-cepage">${options('cepage')}</datalist>
+      <div class="btns">
+        <button type="button" class="btn" data-act="cancel">Annuler</button>
+        <button type="submit" name="after" value="save" class="btn primary">Enregistrer</button>
+        <button type="submit" name="after" value="more" class="btn block">Enregistrer, puis ranger la même ailleurs</button>
+      </div>
     </form>`, true);
+  if (b._touched) $('form').dataset.colorTouched = '1';
 }
+/** Valeurs actuellement saisies dans le formulaire. */
 function formDraft() {
   const f = $('form'); if (!f) return null;
   const d = Object.fromEntries(new FormData(f).entries());
   d.couleur = f.querySelector('.chip.on')?.dataset.couleur || 'rouge';
+  d._touched = f.dataset.colorTouched === '1';   // l'utilisateur a-t-il choisi la couleur lui-même ?
   return d;
 }
+/** Réaffiche le formulaire en gardant les saisies et la position de défilement. */
 function redrawForm(d) {
-  const id = $('form').dataset.id, keep = draftPhoto, scroll = $('sheetBody').scrollTop, title = $('sheetTitle').textContent;
-  const backup = records.get(id); records.set(id, { ...backup, ...d, id, photo: keep });
-  showForm(id); $('sheetTitle').textContent = title;
-  if (backup) records.set(id, backup); else records.delete(id);
-  draftPhoto = keep; $('sheetBody').scrollTop = scroll;
+  const scroll = $('sheetBody').scrollTop;
+  showForm($('form').dataset.id, { ...d, photo: draftPhoto });
+  $('sheetBody').scrollTop = scroll;
 }
 const reselect = () => selected ? selectSlot(selected.key, selected.c, selected.r) : closeSheet();
+const setChip = (couleur) => $('chips')?.querySelectorAll('.chip').forEach((c) => c.classList.toggle('on', c.dataset.couleur === couleur));
 
+/**
+ * Si le nom correspond à un vin déjà enregistré, reprend ce qui est propre au vin (appellation, région,
+ * cépage, couleur) ; le prix et la date limite de garde ne sont repris que pour le même millésime.
+ * Ne remplit que les champs vides.
+ */
+function prefillFromKnown(form) {
+  const id = form.dataset.id, known = findKnownWine(allBottles().filter((x) => x.id !== id), form.elements.nom.value, form.elements.millesime.value);
+  if (!known) return;
+  const inherit = inheritableFields(known, form.elements.millesime.value);
+  let n = 0;
+  for (const k of ['appellation', 'region', 'cepage', 'apogee', 'prix']) {
+    const el = form.elements[k]; if (inherit[k] && !el.value.trim()) { el.value = inherit[k]; n++; }
+  }
+  if (inherit.couleur && !form.dataset.colorTouched && !bottleAt(id)) { setChip(inherit.couleur); n++; }
+  if (n) toast(`Infos reprises de « ${known.nom} »`);
+}
+
+// ---------- Lecture de l'étiquette par photo ----------
+/** Range les champs lus sur l'étiquette dans le formulaire, sans écraser ce que l'utilisateur a déjà saisi. */
+function applyScan(form, out) {
+  let n = 0;
+  for (const k of ['nom', 'millesime', 'appellation', 'region', 'cepage']) {
+    const el = form.elements[k]; if (out[k] && !el.value.trim()) { el.value = out[k]; n++; }
+  }
+  if (out.couleur && !form.dataset.colorTouched && !bottleAt(form.dataset.id)) { setChip(out.couleur); n++; }
+  return n;
+}
+/** Envoie la photo du formulaire à Gemini puis remplit les champs. Sans clé enregistrée, ne fait rien. */
+async function runScan() {
+  const form = $('form'), key = getApiKey();
+  if (!form || !draftPhoto || !key) return;
+  if (form.dataset.scanning) return;   // une lecture est déjà en cours pour ce formulaire
+  form.dataset.scanning = '1';
+  const scanBtn = form.querySelector('[data-act=scan]'); if (scanBtn) scanBtn.disabled = true;
+  const token = ++scanToken, id = form.dataset.id, status = $('scanStatus');
+  const say = (cls, text) => { status.className = 'scan ' + cls; status.textContent = text; };
+  say('busy', 'Lecture de l\'étiquette…');
+  try {
+    const out = await scanLabel({ dataUrl: draftPhoto, apiKey: key });
+    const f = $('form'); if (token !== scanToken || !f || f.dataset.id !== id) return;   // l'utilisateur est parti entre-temps
+    const n = applyScan(f, out);
+    if (!n) {
+      const read = ['nom', 'millesime', 'appellation', 'region', 'cepage'].some((k) => out[k]);
+      return read ? say('ok', 'Étiquette lue : vos saisies ont été conservées.') : say('err', 'Rien de lisible trouvé sur la photo : saisissez les informations à la main.');
+    }
+    prefillFromKnown(f);
+    say('ok', 'Étiquette lue : vérifiez les champs avant d\'enregistrer.');
+  } catch (e) {
+    console.error(e);
+    if (token === scanToken && $('form')) say('err', scanErrorMessage(e));
+  } finally {
+    delete form.dataset.scanning; if (scanBtn) scanBtn.disabled = false;
+  }
+}
+
+/** Réglages de la lecture d'étiquette : clé Google, test, désactivation. */
+function showScanSettings(msg = '') {
+  const has = !!getApiKey();
+  openSheet('Lecture des étiquettes', `
+    <p class="help">Quand vous photographiez une étiquette, l'application peut lire le nom, le millésime, l'appellation… et remplir la fiche toute seule. Elle utilise pour cela l'IA gratuite de Google (Gemini).</p>
+    <p class="scan ${has ? 'ok' : ''}" role="status">${esc(msg || (has ? 'Lecture automatique activée.' : 'Lecture automatique non activée.'))}</p>
+    <h3>Activer en 3 étapes</h3>
+    <p class="help">1. Ouvrez <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> et connectez-vous avec un compte Google.<br>2. Touchez « Create API key » (gratuit, sans carte bancaire).<br>3. Copiez la clé et collez-la ci-dessous.</p>
+    <label class="field">Clé Google AI Studio<input id="scanKey" type="text" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="off" placeholder="${has ? 'Une clé est déjà enregistrée' : 'AIza…'}"></label>
+    <div class="btns"><button class="btn primary block" data-act="scan-save">Enregistrer la clé</button><button class="btn" data-act="scan-test">Tester</button>${has ? '<button class="btn danger" data-act="scan-clear">Désactiver</button>' : ''}</div>
+    <p class="help"><b>À savoir :</b> la photo est envoyée à Google pour être lue. Avec l'offre gratuite, Google peut réutiliser ces contenus pour améliorer ses produits : ne photographiez que des étiquettes. La clé reste uniquement sur cet appareil et n'apparaît dans aucune sauvegarde.</p>
+    <div class="btns"><button class="btn block" data-act="menu">Retour</button></div>`, true);
+}
+/** Teste la clé (saisie ou enregistrée) et affiche le résultat dans l'écran de réglages. */
+async function checkScanKey(key, { keep }) {
+  const status = $('sheetBody').querySelector('.scan');
+  if (status) { status.className = 'scan busy'; status.textContent = 'Test de la clé en cours…'; }
+  $('sheetBody').querySelectorAll('[data-act^="scan-"]').forEach((b) => { b.disabled = true; });   // évite les appels multipliés
+  try { await testApiKey(key); showScanSettings('Clé acceptée par Google : la lecture automatique fonctionne.'); }
+  catch (e) {
+    if (e.kind === 'key' && keep) clearApiKey();   // une clé refusée n'est pas conservée
+    showScanSettings(e.kind === 'format' ? 'Réponse inattendue de Google : réessayez plus tard.' : scanErrorMessage(e));
+  }
+}
+
+// ---------- Actions de la fiche ----------
 $('sheetBody').addEventListener('click', async (e) => {
+  const styleChip = e.target.closest('[data-style]');
+  if (styleChip) { pickStyle(styleChip); return; }
+  const tstep = e.target.closest('[data-tstep]');
+  if (tstep) { stepTool(tstep); return; }
   const chip = e.target.closest('[data-couleur]');
-  if (chip) { $('chips').querySelectorAll('.chip').forEach((c) => c.classList.toggle('on', c === chip)); return; }
+  if (chip) { setChip(chip.dataset.couleur); $('form').dataset.colorTouched = '1'; return; }
+  const step = e.target.closest('[data-step]');
+  if (step) { const el = $('form').elements.quantite; el.value = clamp(qty({ quantite: el.value }) + (+step.dataset.step), 1, 99); return; }
   const row = e.target.closest('[data-goto]');
   if (row) { const { k, c, r } = parseId(row.dataset.goto); selectSlot(k, c, r); return; }
   const act = e.target.closest('[data-act]')?.dataset.act; if (!act) return;
   const id = selected?.id, b = id && bottleAt(id);
-  if (['add', 'edit', 'remove', 'copy', 'move'].includes(act) && (!id || (act !== 'add' && !b))) return closeSheet();
+  if (['add', 'edit', 'remove', 'drink', 'copy', 'move'].includes(act) && (!id || (act !== 'add' && !b))) return closeSheet();
   if (act === 'add' || act === 'edit') showForm(id);
   else if (act === 'cancel') reselect();
   else if (act === 'photo') $('photoInput').click();
   else if (act === 'nophoto') { const d = formDraft(); draftPhoto = null; redrawForm(d); }
-  else if (act === 'remove') {
+  else if (act === 'scan') runScan();
+  else if (act === 'drink' && qty(b) > 1) { const after = { ...b, quantite: qty(b) - 1 }; if (await saveRecord(after)) { refresh(); reselect(); offerUndo('Une bouteille de moins', [b], [after]); } }
+  else if (act === 'drink' || act === 'remove') {
     if (!await ask(`Retirer « ${b.nom} » de la cave ? Sa fiche sera supprimée.`)) return;
-    await deleteRecord(id); refresh(); closeSheet(); toast('Bouteille retirée');
+    if (!await deleteRecord(id)) return;
+    refresh(); closeSheet(); offerUndo('Bouteille retirée', [b]);
   }
   else if (act === 'copy' || act === 'move') startMode(act, b);
   else if (act === 'inventory') showInventory();
@@ -623,27 +796,55 @@ $('sheetBody').addEventListener('click', async (e) => {
   else if (act === 'import') $('importInput').click();
   else if (act === 'install') showInstall();
   else if (act === 'menu') showMenu();
+  else if (act === 'config-focus') showConfig(e.target.closest('[data-rack]')?.dataset.rack);
+  else if (act === 'scan-settings') showScanSettings();
+  else if (act === 'clear-col' || act === 'clear-row' || act === 'clear-rack') await clearPart(act);
+  else if (act === 'soon') showSoon();
+  else if (act === 'help') showWelcome();
+  else if (act === 'welcome-ok') { try { localStorage.setItem('cave-bienvenue', '1'); } catch { /* sans stockage : réaffichée au prochain lancement */ } closeSheet(); }
+  else if (act === 'inv-filter') showInventory(e.target.closest('[data-color]')?.dataset.color || '');
+  else if (act === 'scan-save') {
+    const key = cleanApiKey($('scanKey').value);
+    if (!key) return toast('Collez la clé en entier (elle fait une quarantaine de caractères)');
+    try { setApiKey(key); } catch { return toast('Impossible d\'enregistrer la clé sur cet appareil'); }
+    await checkScanKey(key, { keep: true });
+  }
+  else if (act === 'scan-test') {
+    const key = cleanApiKey($('scanKey').value) || getApiKey();
+    if (!key) return toast('Collez d\'abord la clé');
+    await checkScanKey(key, { keep: key === getApiKey() });
+  }
+  else if (act === 'scan-clear') { if (await ask('Désactiver la lecture automatique et effacer la clé de cet appareil ?', 'Désactiver')) { clearApiKey(); showScanSettings(); } }
   else if (act === 'demo') { await seedDemo(); refresh(); showMenu(); toast('Bouteilles d\'exemple ajoutées'); }
   else if (act === 'cleardemo') { if (!await ask('Retirer toutes les bouteilles d\'exemple ?')) return; await clearDemo(); refresh(); showMenu(); }
+});
+// Quand on choisit (ou saisit) le nom d'un vin déjà connu, le reste de la fiche se pré-remplit.
+$('sheetBody').addEventListener('change', (e) => {
+  if (['nom', 'millesime'].includes(e.target.name) && e.target.form?.id === 'form') prefillFromKnown(e.target.form);
 });
 $('sheetBody').addEventListener('submit', async (e) => {
   e.preventDefault();
   if (e.target.id === 'form') {
-    const id = e.target.dataset.id, d = formDraft(), old = bottleAt(id);
+    const id = e.target.dataset.id, old = bottleAt(id), more = e.submitter?.value === 'more';
+    const { _touched, ...d } = formDraft();
     for (const k in d) d[k] = String(d[k]).trim();
     if (!d.nom) return toast('Indiquez au moins le nom');
-    await saveRecord({ ...old, ...d, id, photo: draftPhoto, ajout: old?.ajout || Date.now() });
-    refresh(); const { k, c, r } = parseId(id); selectSlot(k, c, r); toast('Fiche enregistrée');
+    const rec = { ...old, ...d, quantite: qty(d), id, photo: draftPhoto, ajout: old?.ajout || Date.now() };
+    delete rec.vide; delete rec.demo;   // une fiche modifiée par l'utilisateur n'est plus une bouteille d'exemple
+    if (!await saveRecord(rec)) return;   // enregistré sur l'appareil avant de confirmer
+    refresh(); const { k, c, r } = parseId(id); selectSlot(k, c, r); saved('Fiche enregistrée');
+    if (more) startMode('copy', rec);
   } else if (e.target.id === 'configForm') {
-    const d = Object.fromEntries(new FormData(e.target).entries());
-    const next = normalizeConfig({ nom: (d.nom || '').trim(), cols: d.cols, rowsMur: d.rowsMur, rowsIlot: d.rowsIlot }), sizes = rackSizes(next);
-    const lost = allBottles().filter((b) => { const { k, c, r } = parseId(b.id); return c >= sizes[k].cols || r >= sizes[k].rows; }).length;
-    if (lost && !await ask(`${lost} bouteille(s) enregistrée(s) se trouvent hors des nouvelles dimensions. Leurs fiches sont conservées mais ne seront plus visibles tant que vous n'agrandissez pas. Continuer ?`)) return;
-    localStorage.setItem(CONFIG_KEY, JSON.stringify(next)); location.reload();
+    const d = Object.fromEntries(new FormData(e.target).entries()), racksIn = {};
+    for (const k of RACK_ORDER) racksIn[k] = { style: d[`${k}_style`], cols: d[`${k}_cols`], rows: d[`${k}_rows`] };
+    const next = normalizeConfig({ nom: (d.nom || '').trim(), racks: racksIn });
+    if (!await confirmConfigChange(next)) return;
+    try { localStorage.setItem(CONFIG_KEY, JSON.stringify(next)); } catch { return toast('Impossible d\'enregistrer le réglage sur cet appareil (stockage bloqué)'); }
+    location.reload();
   }
 });
 
-// Photo de l'étiquette : réduite et stockée dans la fiche
+// Photo de l'étiquette : réduite, stockée dans la fiche, puis lue automatiquement si la lecture est activée
 $('photoInput').addEventListener('change', async (e) => {
   const file = e.target.files[0]; e.target.value = ''; if (!file || !$('form')) return;
   try {
@@ -654,27 +855,41 @@ $('photoInput').addEventListener('change', async (e) => {
     c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
     draftPhoto = c.toDataURL('image/jpeg', 0.78);
     redrawForm(d);
-  } catch { toast('Impossible de lire cette photo'); }
+  } catch { return toast('Impossible de lire cette photo'); }
+  runScan();
 });
 
-// Modes « j'ai la même ailleurs » et « déplacer »
+// ---------- Modes « j'ai la même ailleurs » (copie) et « déplacer » ----------
+/** Entre dans un mode où chaque touche sur un emplacement libre y range la fiche. */
 function startMode(type, b) {
   if (!b) return;
-  mode = { type, source: { ...b } };
-  $('bannerText').textContent = type === 'copy' ? `Touchez chaque emplacement où se trouve aussi « ${b.nom} »` : `Touchez le nouvel emplacement de « ${b.nom} »`;
-  $('banner').hidden = false; closeSheet();
+  mode = { type, source: { ...b }, added: 0 };
+  $('bannerQty').hidden = type !== 'copy';
+  updateBanner(); $('banner').hidden = false; closeSheet();
+}
+function updateBanner() {
+  if (!mode) return;
+  const nom = mode.source.nom || 'cette bouteille';
+  $('bannerText').textContent = mode.type === 'copy'
+    ? `Touchez chaque emplacement où ranger aussi « ${nom} »${mode.added ? ` (${mode.added} ajouté${mode.added > 1 ? 's' : ''})` : ''}`
+    : `Touchez le nouvel emplacement de « ${nom} »`;
+  $('bannerQtyVal').textContent = qty(mode.source);
 }
 function endMode() { mode = null; $('banner').hidden = true; }
 $('bannerDone').onclick = endMode;
+// Nombre de bouteilles rangées à chaque emplacement touché (mode copie)
+$('banner').addEventListener('click', (e) => {
+  const s = e.target.closest('[data-bstep]'); if (!s || !mode) return;
+  mode.source.quantite = clamp(qty(mode.source) + (+s.dataset.bstep), 1, 99); updateBanner();
+});
 
 // ---------- Recherche ----------
-const norm = (s) => String(s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 function haystack(b) { return norm([b.nom, b.millesime, b.appellation, b.region, b.cepage, typeOf(b).nom, b.commentaire].join(' ')); }
 function sortBottles(a, b) { return norm(a.nom).localeCompare(norm(b.nom)) || String(a.millesime).localeCompare(String(b.millesime)) || a.id.localeCompare(b.id); }
 function rowHtml(b) {
   return `<button class="row" data-goto="${b.id}"><span class="dot" style="background:${typeOf(b).css}"></span>
     <span class="main"><div class="n">${esc(b.nom || 'Sans nom')}</div><div class="s">${esc(b.appellation ? b.appellation + ' — ' : '')}${locShort(b.id)}</div></span>
-    <span class="y">${esc(b.millesime || '')}</span></button>`;
+    <span class="y">${esc(b.millesime || '')}${qty(b) > 1 ? ` <small>×${qty(b)}</small>` : ''}</span></button>`;
 }
 function runSearch(show = true) {
   const q = norm($('search').value.trim()); $('searchClear').hidden = !q;
@@ -706,41 +921,193 @@ $('nav').addEventListener('click', (e) => {
 
 // ---------- Menu ----------
 $('menuBtn').onclick = showMenu;
+$('rackBtn').onclick = () => showRackTools(view.key);
 function showMenu() {
   closeSheet();
   const total = Object.values(racks).reduce((s, r) => s + r.cols * r.rows, 0);
-  const n = allBottles().filter((b) => { const p = parseId(b.id); return inRack(p.k, p.c, p.r); }).length;
+  const shown = allBottles().filter((b) => { const p = parseId(b.id); return inRack(p.k, p.c, p.r); });
   openSheet(config.nom, `
-    <div class="stats"><div class="stat"><b>${n}</b><span>bouteilles enregistrées</span></div><div class="stat"><b>${total - n}</b><span>emplacements sans fiche</span></div></div>
+    <div class="stats"><div class="stat"><b>${totalBottles(shown)}</b><span>bouteilles</span></div><div class="stat"><b>${shown.length}</b><span>emplacements remplis</span></div><div class="stat"><b>${total - shown.length}</b><span>emplacements sans fiche</span></div></div>
     <div class="btns">
       <button class="btn block" data-act="inventory">Liste de mes bouteilles</button>
-      <button class="btn block" data-act="config">Dimensions des casiers</button>
+      <button class="btn block" data-act="soon">À boire bientôt</button>
+      <button class="btn block" data-act="scan-settings">Lecture des étiquettes${getApiKey() ? ' (activée)' : ''}</button>
+      <button class="btn block" data-act="config">Rangement de la cave</button>
       <button class="btn block" data-act="export">Sauvegarder mes données</button>
       <button class="btn block" data-act="import">Restaurer une sauvegarde</button>
       <button class="btn block" data-act="install">Installer sur l'iPhone</button>
+      <button class="btn block" data-act="help">Mode d'emploi</button>
       ${[...records.values()].some((b) => b.demo) ? '<button class="btn danger block" data-act="cleardemo">Test : retirer les bouteilles d\'exemple</button>' : '<button class="btn block" data-act="demo">Test : ajouter des bouteilles d\'exemple</button>'}
-    </div>`, true);
+    </div>
+    <p class="help version">Ma Cave · version ${esc(APP_VERSION)}</p>`, true);
 }
-function showInventory() {
+/** Liste de toutes les fiches ; toucher une couleur filtre la liste. */
+function showInventory(filter = '') {
   const all = allBottles().sort(sortBottles), by = {};
-  for (const b of all) by[b.couleur || 'rouge'] = (by[b.couleur || 'rouge'] || 0) + 1;
-  openSheet('Mes bouteilles', `
-    <div class="stats">${Object.entries(TYPES).filter(([k]) => by[k]).map(([k, t]) => `<div class="stat"><b>${by[k]}</b><span>${t.nom}</span></div>`).join('')}</div>
-    <div class="list">${all.length ? all.map(rowHtml).join('') : '<div class="empty">Aucune bouteille enregistrée pour l\'instant. Ouvrez un casier et touchez une bouteille pour créer sa fiche.</div>'}</div>
+  for (const b of all) by[b.couleur || 'rouge'] = (by[b.couleur || 'rouge'] || 0) + qty(b);
+  const shown = filter ? all.filter((b) => (b.couleur || 'rouge') === filter) : all;
+  openSheet(`Mes bouteilles (${totalBottles(shown)})`, `
+    <div class="stats">${Object.entries(TYPES).filter(([k]) => by[k]).map(([k, t]) => `<button class="stat${filter === k ? ' on' : ''}" data-act="inv-filter" data-color="${filter === k ? '' : k}"><b>${by[k]}</b><span>${t.nom}</span></button>`).join('')}</div>
+    ${filter ? `<p class="help">Filtre : ${TYPES[filter].nom}. Touchez-le à nouveau pour tout afficher.</p>` : ''}
+    <div class="list">${shown.length ? shown.map(rowHtml).join('') : '<div class="empty">Aucune bouteille enregistrée pour l\'instant. Ouvrez un casier et touchez une bouteille pour créer sa fiche.</div>'}</div>
     <div class="btns"><button class="btn block" data-act="menu">Retour</button></div>`, true);
 }
-function showConfig() {
-  openSheet('Dimensions des casiers', `
-    <p class="help">Les deux murs et l'îlot ont la même longueur. Indiquez le nombre de bouteilles en longueur, puis le nombre de rangées en hauteur. La maquette s'adapte automatiquement.</p>
+/** Réglage du rangement : pour chaque casier, type de rangement, colonnes et rangées. */
+function showConfig(focus = null) {
+  const block = (k) => {
+    const r = rk[k], lim = rackLimits(k, r.style);
+    return `<fieldset class="rackcfg" data-rack="${k}"${focus === k ? ' id="cfgFocus"' : ''}><legend>${RACK_NAMES[k]}</legend>
+      <div class="chips">${Object.entries(STYLES).map(([sk, st]) => `<button type="button" class="chip${sk === r.style ? ' on' : ''}" data-style="${sk}">${st.nom}</button>`).join('')}</div>
+      <input type="hidden" name="${k}_style" value="${r.style}">
+      <p class="help small" data-aide>${esc(STYLES[r.style].aide)}</p>
+      <p class="size" data-size>${sizeText(r.style, r.cols, r.rows)}</p>
+      <div class="two">
+        <label><span data-lab="cols">Colonnes (max ${lim.cols})</span><input name="${k}_cols" value="${r.cols}" inputmode="numeric" pattern="[0-9]*"></label>
+        <label><span data-lab="rows">Rangées (max ${lim.rows})</span><input name="${k}_rows" value="${r.rows}" inputmode="numeric" pattern="[0-9]*"></label>
+      </div></fieldset>`;
+  };
+  openSheet('Rangement de la cave', `
+    <p class="help">Pour chaque casier, choisissez le type de rangement puis le nombre de <b>colonnes</b> (en longueur, depuis l'entrée) et de <b>rangées</b> (en hauteur). La maquette s'adapte. Chaque casier a sa propre taille : l'îlot peut être plus court ou plus long que les murs, et les deux murs peuvent être différents.</p>
     <form id="configForm">
       <label>Nom de la cave<input name="nom" value="${esc(config.nom)}" maxlength="40"></label>
-      <label>Bouteilles en longueur, murs et îlot (max ${LIMITS.cols})<input name="cols" value="${config.cols}" inputmode="numeric" pattern="[0-9]*"></label>
-      <div class="two">
-        <label>Rangées des murs (max ${LIMITS.rowsMur})<input name="rowsMur" value="${config.rowsMur}" inputmode="numeric" pattern="[0-9]*"></label>
-        <label>Rangées de l'îlot (max ${LIMITS.rowsIlot})<input name="rowsIlot" value="${config.rowsIlot}" inputmode="numeric" pattern="[0-9]*"></label>
-      </div>
+      ${RACK_ORDER.map(block).join('')}
       <div class="btns"><button type="button" class="btn" data-act="menu">Annuler</button><button type="submit" class="btn primary">Appliquer</button></div>
     </form>`, true);
+  $('cfgFocus')?.scrollIntoView({ block: 'start' });
+}
+/** « Longueur ≈ 3,6 m · hauteur ≈ 1,9 m » pour un casier. */
+function sizeText(style, cols, rows) {
+  const { length, height } = rackSize(style, cols, rows);
+  return `Longueur ≈ ${meters(length)} · hauteur ≈ ${meters(height)}`;
+}
+/** Met à jour la taille affichée d'un casier pendant le réglage. */
+function updateSize(box) {
+  const k = box.dataset.rack, v = (f) => box.querySelector(`[name="${k}_${f}"]`).value, style = v('style'), lim = rackLimits(k, style);
+  // Taille bornée aux maximums du type : c'est ce qui sera réellement appliqué.
+  box.querySelector('[data-size]').textContent = sizeText(style, clamp(parseInt(v('cols')) || 0, 0, lim.cols), clamp(parseInt(v('rows')) || 0, 0, lim.rows));
+}
+$('sheetBody').addEventListener('input', (e) => { const box = e.target.closest('#configForm [data-rack]'); if (box) updateSize(box); });
+/** Choix d'un type de rangement dans les réglages : met à jour l'aide et les maximums affichés. */
+function pickStyle(chip) {
+  const box = chip.closest('[data-rack]'), k = box.dataset.rack, style = chip.dataset.style, lim = rackLimits(k, style);
+  box.querySelectorAll('[data-style]').forEach((c) => c.classList.toggle('on', c === chip));
+  box.querySelector(`[name="${k}_style"]`).value = style;
+  box.querySelector('[data-aide]').textContent = STYLES[style].aide;
+  box.querySelector('[data-lab="cols"]').textContent = `Colonnes (max ${lim.cols})`;
+  box.querySelector('[data-lab="rows"]').textContent = `Rangées (max ${lim.rows})`;
+  for (const [f, max] of [['cols', lim.cols], ['rows', lim.rows]]) {   // valeur trop grande pour ce type : ramenée au maximum, et on le dit
+    const el = box.querySelector(`[name="${k}_${f}"]`);
+    if ((parseInt(el.value) || 0) > max) { el.value = max; toast(`${f === 'cols' ? 'Colonnes' : 'Rangées'} ramenées à ${max} pour ce type de rangement`); }
+  }
+  updateSize(box);
+}
+/**
+ * Avant d'appliquer un nouveau rangement : prévient clairement si des fiches risquent d'être mélangées
+ * (type de rangement changé alors que le casier contient des fiches) ou masquées (dimensions réduites).
+ */
+async function confirmConfigChange(next) {
+  const all = allBottles(), warnings = [];
+  for (const k of RACK_ORDER) {
+    const before = rk[k], after = next.racks[k], inRackNow = recordsIn(all, k);
+    if (!inRackNow.length) continue;
+    if (before.style !== after.style) {
+      warnings.push(`• ${RACK_NAMES[k]} : passe de « ${STYLES[before.style].nom} » à « ${STYLES[after.style].nom} » alors qu'il contient ${inRackNow.length} fiche(s). Chaque fiche reste attachée à son numéro de colonne et de rangée : avec un autre rangement, ces numéros ne désignent plus les mêmes endroits, et les bouteilles risquent d'être mélangées.`);
+    }
+    const hidden = inRackNow.filter((b) => { const p = parseId(b.id); return p.c >= after.cols || p.r >= after.rows; }).length;
+    if (hidden) warnings.push(`• ${RACK_NAMES[k]} : ${hidden} fiche(s) seront hors des nouvelles dimensions. Elles sont conservées mais invisibles tant que vous n'agrandissez pas.`);
+  }
+  if (!warnings.length) return true;
+  return ask(`Attention, l'arrangement risque d'être mélangé :\n\n${warnings.join('\n\n')}\n\nConseil : notez ces bouteilles ou videz d'abord le casier (bouton « Gérer ce casier »).`, 'Appliquer quand même');
+}
+
+// ---------- Gérer un casier : vider une colonne, une rangée ou tout le casier ----------
+/** Outils d'un casier. Colonne et rangée sont pré-remplies avec le dernier emplacement touché. */
+function showRackTools(k) {
+  if (!racks[k]) return;
+  const rack = racks[k], st = styleOf(k), inIt = recordsIn(allBottles(), k);
+  const last = lastSlot && lastSlot.key === k ? lastSlot : { c: 0, r: 0 };
+  const stepper = (name, value, max, label) => `<div class="field">${label}
+      <div class="stepper"><button type="button" class="btn" data-tstep="-1" data-for="${name}" aria-label="Moins">−</button>
+      <input name="${name}" id="${name}" value="${value}" inputmode="numeric" pattern="[0-9]*" data-max="${max}" aria-label="${label}">
+      <button type="button" class="btn" data-tstep="1" data-for="${name}" aria-label="Plus">+</button></div></div>`;
+  openSheet(`Gérer : ${RACK_NAMES[k]}`, `
+    <div class="loc">${esc(st.nom)} · ${rack.cols} colonnes × ${rack.rows} rangées · <b>${totalBottles(inIt)}</b> bouteille(s) dans <b>${inIt.length}</b> ${st.lieu}(s)</div>
+    <h3>Vider une colonne</h3>
+    ${stepper('toolCol', last.c + 1, rack.cols, 'Colonne (depuis l\'entrée)')}
+    <div class="btns"><button class="btn danger block" data-act="clear-col">Vider cette colonne</button></div>
+    <h3>Vider une rangée</h3>
+    ${stepper('toolRow', last.r + 1, rack.rows, 'Rangée (depuis le bas)')}
+    <div class="btns"><button class="btn danger block" data-act="clear-row">Vider cette rangée</button></div>
+    <h3>Tout le casier</h3>
+    <div class="btns"><button class="btn danger block" data-act="clear-rack">Vider tout le casier</button>
+      <button class="btn block" data-act="config-focus" data-rack="${k}">Changer le type de rangement ou les dimensions</button></div>
+    <p class="help">Vider retire les fiches (les bouteilles disparaissent de la maquette). Vous pourrez annuler juste après.</p>`, true);
+  $('sheetBody').dataset.rack = k;
+}
+function stepTool(btn) {
+  const el = $(btn.dataset.for);
+  el.value = clamp((parseInt(el.value) || 1) + (+btn.dataset.tstep), 1, +el.dataset.max);
+}
+/** Vide une colonne, une rangée ou tout le casier, après confirmation, avec possibilité d'annuler. */
+async function clearPart(act) {
+  const k = $('sheetBody').dataset.rack, rack = racks[k]; if (!rack) return;
+  const col = clamp((parseInt($('toolCol')?.value) || 1), 1, rack.cols) - 1, row = clamp((parseInt($('toolRow')?.value) || 1), 1, rack.rows) - 1;
+  const what = act === 'clear-col' ? { col } : act === 'clear-row' ? { row } : {};
+  const label = act === 'clear-col' ? `la colonne ${col + 1}` : act === 'clear-row' ? `la rangée ${row + 1}` : 'tout le casier';
+  const list = recordsIn(allBottles(), k, what);
+  if (!list.length) return toast(`Rien à vider dans ${label}`);
+  if (!await ask(`Vider ${label} (${RACK_NAMES[k]}) ? ${list.length} fiche(s), ${totalBottles(list)} bouteille(s) seront retirées de la cave.`, 'Vider')) return;
+  const ids = list.map((b) => b.id);
+  if (!await persist((st) => st.removeMany(ids))) return;
+  for (const id of ids) records.delete(id);
+  refresh(); showRackTools(k); offerUndo(`${totalBottles(list)} bouteille(s) retirée(s)`, list);
+}
+
+// ---------- Annuler la dernière suppression ----------
+let undoTimer = null, undoState = null;   // { previous, after, count } : suppressions encore annulables
+/**
+ * Propose « Annuler » pendant 10 secondes après une suppression. Plusieurs suppressions rapprochées
+ * s'additionnent : « Annuler » les remet toutes en place.
+ * `previous` : fiches à remettre ; `after` : versions écrites par l'opération (une fiche modifiée depuis n'est pas écrasée).
+ */
+function offerUndo(message, previous, after = []) {
+  undoState = undoState ? { previous: [...undoState.previous, ...previous], after: [...undoState.after, ...after], count: undoState.count + 1 } : { previous, after, count: 1 };
+  $('undoText').textContent = undoState.count > 1 ? `${message} (${undoState.count} actions annulables)` : message;
+  $('undo').hidden = false; document.body.classList.add('undo-on');
+  clearTimeout(undoTimer); undoTimer = setTimeout(hideUndo, 10000);
+}
+function hideUndo() { clearTimeout(undoTimer); undoState = null; $('undo').hidden = true; document.body.classList.remove('undo-on'); }
+$('undoBtn').onclick = async () => {
+  const st = undoState; hideUndo(); if (!st) return;
+  // Pour chaque emplacement, on remet la version la plus ancienne (avant la première suppression)
+  const first = new Map(); for (const b of st.previous) if (!first.has(b.id)) first.set(b.id, b);
+  const ok = [...first.values()].filter((b) => { const now = records.get(b.id); return !now || st.after.some((a) => a === now); });
+  if (ok.length < first.size) toast('Certains emplacements ont été réutilisés entre-temps : ils sont gardés tels quels');
+  if (!ok.length || !await persist((s2) => s2.putMany(ok))) return;
+  for (const b of ok) records.set(b.id, b);
+  refresh(); if (selected) reselect(); saved('Annulé : bouteilles remises en place');
+};
+
+// ---------- Aides à la prise en main ----------
+/** Mode d'emploi en 4 étapes, affiché au premier lancement et depuis le menu. */
+function showWelcome() {
+  openSheet('Bienvenue dans Ma Cave', `
+    <ol class="steps">
+      <li><b>Choisissez un casier</b> : touchez-le sur la maquette, ou utilisez les boutons en bas de l'écran.</li>
+      <li><b>Touchez une bouteille</b> (ou un emplacement vide) pour voir sa fiche ou l'enregistrer.</li>
+      <li><b>Photographiez l'étiquette</b> : la fiche peut se remplir toute seule (menu, « Lecture des étiquettes »).</li>
+      <li><b>Cherchez</b> une bouteille en haut de l'écran : elle s'entoure d'orange dans la cave.</li>
+    </ol>
+    <p class="help">Glissez un doigt pour tourner la maquette ou faire défiler un casier, écartez deux doigts pour zoomer. Tout est enregistré sur ce téléphone, au fur et à mesure.</p>
+    <div class="btns"><button class="btn primary block" data-act="welcome-ok">C'est parti</button></div>`, true);
+}
+/** Bouteilles à boire bientôt (date « à boire jusqu'en » dépassée ou dans l'année qui vient). */
+function showSoon() {
+  const year = new Date().getFullYear(), list = drinkSoon(allBottles(), year);
+  openSheet(`À boire bientôt (${totalBottles(list)})`, `
+    <p class="help">Bouteilles dont la date « à boire jusqu'en » est ${year + 1} ou avant.</p>
+    <div class="list">${list.length ? list.map(rowHtml).join('') : '<div class="empty">Rien d\'urgent. Pensez à remplir « À boire jusqu\'en » dans les fiches.</div>'}</div>
+    <div class="btns"><button class="btn block" data-act="menu">Retour</button></div>`, true);
 }
 function showInstall() {
   openSheet('Installer sur l\'iPhone', `
@@ -749,7 +1116,7 @@ function showInstall() {
     <div class="btns"><button class="btn block" data-act="menu">Retour</button></div>`, true);
 }
 async function exportData() {
-  const data = JSON.stringify({ app: 'ma-cave', version: 2, date: new Date().toISOString(), config, bouteilles: [...records.values()] });
+  const data = JSON.stringify({ app: 'ma-cave', version: 2, appVersion: APP_VERSION, date: new Date().toISOString(), config, bouteilles: [...records.values()] });
   const name = `ma-cave-${new Date().toISOString().slice(0, 10)}.json`;
   const file = new File([data], name, { type: 'application/json' });
   try { if (navigator.canShare?.({ files: [file] })) { await navigator.share({ files: [file], title: 'Sauvegarde Ma Cave' }); return; } } catch (e) { if (e.name === 'AbortError') return; }
@@ -761,11 +1128,14 @@ $('importInput').addEventListener('change', async (e) => {
   try {
     const d = JSON.parse(await file.text());
     if (!Array.isArray(d.bouteilles)) throw new Error('format');
-    const list = d.bouteilles.filter((b) => b && !b.vide && typeof b.id === 'string' && /^(G|IG|ID|D):\d+:\d+$/.test(b.id))
+    const list = d.bouteilles.filter((b) => b && !b.vide && isValidId(b.id))
       .map((b) => ({ ...b, photo: typeof b.photo === 'string' && b.photo.startsWith('data:image/') ? b.photo : null }));
-    if (!await ask(`Restaurer cette sauvegarde (${list.length} bouteille(s) enregistrée(s)) ? Les données actuelles seront remplacées.`)) return;
-    await dbOp('readwrite', (s) => { s.clear(); for (const b of list) s.put(b); });
-    if (d.config) localStorage.setItem(CONFIG_KEY, JSON.stringify(normalizeConfig(d.config)));
+    if (!store) return toast('Stockage indisponible : impossible de restaurer');
+    if (!await ask(`Restaurer cette sauvegarde (${list.length} fiche(s)) ? Les données actuelles seront remplacées.`)) return;
+    if (d.config) {   // réglage d'abord : s'il ne peut pas être écrit, on n'a encore rien remplacé
+      try { localStorage.setItem(CONFIG_KEY, JSON.stringify(normalizeConfig(d.config))); } catch { return toast('Impossible d\'enregistrer le réglage sur cet appareil : rien n\'a été restauré'); }
+    }
+    if (!await persist((st) => st.replaceAll(list))) return;
     location.reload();
   } catch { toast('Ce fichier n\'est pas une sauvegarde valide'); }
 });
@@ -779,17 +1149,20 @@ const DEMO = [
 ];
 async function seedDemo() {
   const list = [];
-  for (const k of RACK_ORDER) for (let c = 0; c < racks[k].cols; c++) for (let r = 0; r < racks[k].rows; r++) {
-    const id = slotId(k, c, r), x = Math.random(); if (records.has(id)) continue;
-    if (x < 0.6) { const w = DEMO[Math.floor(Math.random() * DEMO.length)]; list.push({ id, nom: w[0], appellation: w[1], region: w[2], couleur: w[3], millesime: String(1998 + Math.floor(Math.random() * 25)), demo: true, ajout: Date.now() }); }
+  for (const k of RACK_ORDER) {
+    const st = styleOf(k);
+    for (let c = 0; c < racks[k].cols; c++) for (let r = 0; r < racks[k].rows; r++) {
+      const id = slotId(k, c, r); if (records.has(id) || Math.random() > 0.6) continue;
+      const w = DEMO[Math.floor(Math.random() * DEMO.length)];
+      const quantite = st.defaut > 1 ? 1 + Math.floor(Math.random() * (st.defaut + 2)) : 1;
+      list.push({ id, nom: w[0], appellation: w[1], region: w[2], couleur: w[3], millesime: String(1998 + Math.floor(Math.random() * 25)), apogee: String(2024 + Math.floor(Math.random() * 12)), quantite, demo: true, ajout: Date.now() });
+    }
   }
-  for (const b of list) records.set(b.id, b);
-  await dbOp('readwrite', (s) => { for (const b of list) s.put(b); });
+  if (await persist((st) => st.putMany(list))) for (const b of list) records.set(b.id, b);
 }
 async function clearDemo() {
   const ids = [...records.values()].filter((b) => b.demo).map((b) => b.id);
-  for (const id of ids) records.delete(id);
-  await dbOp('readwrite', (s) => { for (const id of ids) s.delete(id); });
+  if (await persist((st) => st.removeMany(ids))) for (const id of ids) records.delete(id);
 }
 
 document.addEventListener('gesturestart', (e) => e.preventDefault());
@@ -805,16 +1178,29 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
-if (new URLSearchParams(location.search).has('debug')) window.__cave = { tapSlot, selectSlot, records, view, hero, camera, get heroAnim() { return heroAnim; } };   // pour les tests automatiques
+if (new URLSearchParams(location.search).has('debug')) window.__cave = { tapSlot, selectSlot, saveRecord, deleteRecord, get store() { return store; }, records, view, hero, camera, get heroAnim() { return heroAnim; } };   // pour les tests automatiques
 
 // ---------- Démarrage ----------
 (async function start() {
   try {
-    db = await openDB();
-    for (const b of (await dbOp('readonly', (s) => s.getAll())) || []) if (!b.vide) records.set(b.id, b);
+    store = await openStore();
+    for (const b of await store.getAll()) if (!b.vide) records.set(b.id, b);
   } catch (e) { console.error(e); toast('Stockage indisponible : les fiches ne seront pas enregistrées'); }
-  if (db && !records.size && !localStorage.getItem('cave-demo')) { localStorage.setItem('cave-demo', '1'); await seedDemo().catch(console.error); }
+  let hasStoredConfig = true;
+  try { hasStoredConfig = !!(localStorage.getItem(CONFIG_KEY) || localStorage.getItem('cave-config-v3') || localStorage.getItem('cave-config-v2')); } catch { /* stockage bloqué */ }
+  if (needsLegacyConfig(hasStoredConfig, records.size)) {
+    // Fiches créées avec la 0.2.0 (alvéoles partout) : on garde ce rangement pour qu'elles restent à leur place.
+    try { localStorage.setItem(CONFIG_KEY, JSON.stringify(LEGACY_CONFIG)); location.reload(); return; } catch { /* on continue avec le réglage par défaut */ }
+  } else if (!hasStoredConfig && store) {   // sans base lisible, on ne peut pas savoir s'il y a des fiches : on n'écrit rien
+    // Première installation : on enregistre tout de suite le réglage utilisé, sinon le lancement suivant
+    // (avec des fiches, mais toujours sans réglage) croirait à un appareil de la 0.2.0.
+    try { localStorage.setItem(CONFIG_KEY, JSON.stringify(config)); } catch { /* stockage bloqué : rien à faire */ }
+  }
+  let demoDone = true; try { demoDone = !!localStorage.getItem('cave-demo'); } catch { /* stockage bloqué */ }
+  if (store && !records.size && !demoDone) { try { localStorage.setItem('cave-demo', '1'); } catch { /* idem */ } await seedDemo().catch(console.error); }
   rebuildBottles(); applyVisibility(); requestAnimationFrame(frame);
+  let welcomed = false; try { welcomed = !!localStorage.getItem('cave-bienvenue'); } catch { /* stockage bloqué */ }
+  if (!welcomed) showWelcome();
   navigator.storage?.persist?.().catch(() => {});
-  if ('serviceWorker' in navigator && !['localhost', '127.0.0.1'].includes(location.hostname)) navigator.serviceWorker.register('sw.js').catch(() => {});
+  if ('serviceWorker' in navigator && !['localhost', '127.0.0.1'].includes(location.hostname)) navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {});
 })();

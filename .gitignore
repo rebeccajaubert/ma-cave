@@ -1,2 +1,5 @@
 .DS_Store
-.claude/
+# Fichiers locaux de Claude Code (l'agent, les hooks et settings.json, eux, sont versionnés)
+.claude/launch.json
+.claude/settings.local.json
+.claude/state/

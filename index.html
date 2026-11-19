@@ -27,8 +27,14 @@
 </div>
 <div id="results" hidden></div>
 
-<div id="banner" hidden><span id="bannerText"></span><button id="bannerDone">Terminé</button></div>
+<div id="banner" hidden>
+  <div class="bannerRow"><span id="bannerText"></span><button id="bannerDone">Terminé</button></div>
+  <div id="bannerQty" class="bannerRow">Bouteilles par emplacement
+    <span class="mini"><button data-bstep="-1" aria-label="Une de moins">−</button><b id="bannerQtyVal">1</b><button data-bstep="1" aria-label="Une de plus">+</button></span></div>
+</div>
 <div id="hint"></div>
+<button id="rackBtn" hidden>Gérer ce casier</button>
+<div id="undo" hidden role="status"><span id="undoText"></span><button id="undoBtn">Annuler</button></div>
 <nav id="nav">
   <button data-view="overview">Vue<br>d'ensemble</button>
   <button data-view="G">Mur<br>gauche</button>
@@ -48,6 +54,7 @@
 
 <input id="photoInput" type="file" accept="image/*" hidden>
 <input id="importInput" type="file" accept="application/json,.json" hidden>
+<script src="version.js"></script>
 <script type="module" src="app.js"></script>
 </body>
 </html>
