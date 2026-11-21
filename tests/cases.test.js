@@ -53,3 +53,8 @@ test('normalizeConfig : colW / rowH (révision 3)', () => {
   assert.equal(c.racks.D.colW, undefined);              // seulement pour les cases maçonnées
   assert.deepEqual(normalizeConfig(c), c);              // stable
 });
+
+test('moveSeparator : jamais au-delà de la taille maximale d\'une case (CASE_MAX)', () => {
+  const r = moveSeparator([0.3, 1.4, 0.3], 0, -0.2, () => true);   // la case du milieu grandirait à 1,6 m
+  assert.deepEqual(r, [0.2, 1.5, 0.3]);
+});

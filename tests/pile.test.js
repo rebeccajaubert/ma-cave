@@ -68,3 +68,31 @@ test('pile : migration des anciennes fiches à quantité', () => {
   assert.equal(rest.quantite, 2); assert.equal(rest.aRanger, true);
   assert.deepEqual(r.remove, []);
 });
+
+// Rejoue des retraits successifs comme l'app (rang au moment de chaque retrait), puis « Annuler » de tout.
+function removeAll(list, ids) {
+  let work = [...list]; const removed = [];
+  for (const id of ids) {
+    removed.push(work.find((x) => x.id === id));
+    const { put, remove } = removeFromPile(work, id), m = new Map(put.map((p) => [p.id, p]));
+    work = work.filter((x) => !remove.includes(x.id)).map((x) => m.get(x.id) || x);
+  }
+  return { work, removed };
+}
+const apply = (list, fix) => { const m = new Map(list.map((x) => [x.id, x])); for (const f of fix) m.set(f.id, f); return [...m.values()]; };
+
+test('pile : annuler deux retraits au même rang (bouteille du bas bue deux fois)', () => {
+  const list0 = [b('G:0:0:a', 0), b('G:0:0:b', 1), b('G:0:0:c', 2)];
+  const { work, removed } = removeAll(list0, ['G:0:0:a', 'G:0:0:b']);   // a au rang 0, puis b descendu au rang 0
+  const back = pileOf(apply(work, undoRemoval(work, removed)), 'G:0:0').map((x) => [x.id, x.pile]);
+  assert.deepEqual(back, [['G:0:0:a', 0], ['G:0:0:b', 1], ['G:0:0:c', 2]]);
+});
+
+test('pile : annuler un retrait puis « Vider cette case »', () => {
+  const list0 = [b('G:0:0:a', 0), b('G:0:0:b', 1), b('G:0:0:c', 2), b('G:0:0:d', 3)];
+  const first = removeAll(list0, ['G:0:0:c']);                                    // c au rang 2 ; d descend au rang 2
+  const second = removeAll(first.work, pileOf(first.work, 'G:0:0').map((x) => x.id).reverse());   // vider : du haut vers le bas
+  const removed = [...first.removed, ...second.removed];
+  const back = pileOf(apply(second.work, undoRemoval(second.work, removed)), 'G:0:0').map((x) => [x.id, x.pile]);
+  assert.deepEqual(back, [['G:0:0:a', 0], ['G:0:0:b', 1], ['G:0:0:c', 2], ['G:0:0:d', 3]]);
+});

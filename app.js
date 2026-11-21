@@ -108,8 +108,8 @@ async function addToCase(caseId, wine, n, extra = {}) {
 async function removeBottles(ids, label, { undo = true } = {}) {
   let work = allBottles(); const puts = new Map(), removed = [];
   for (const id of ids) {
-    if (!work.some((x) => x.id === id)) continue;
-    removed.push(records.get(id));
+    const now = work.find((x) => x.id === id); if (!now) continue;
+    removed.push(now);   // avec son rang AU MOMENT de ce retrait : « Annuler » rejoue les retraits à l'envers
     const { put, remove } = removeFromPile(work, id);
     for (const p of put) puts.set(p.id, p);
     for (const r of remove) puts.delete(r);
@@ -338,7 +338,9 @@ function computePlaces(rack) {
  */
 function buildFacade(rack) {
   const { group, cols, rows, layout } = rack;
-  for (const m of [rack.facade, rack.glass, rack.rings]) if (m) { group.remove(m); m.traverse?.((o) => o.geometry?.dispose()); }
+  // Ne libérer que ce qui appartient à ce casier : les géométries de bouteille et d'anneau sont partagées
+  if (rack.facade) { group.remove(rack.facade); rack.facade.traverse((o) => o.geometry?.dispose()); }
+  for (const m of [rack.glass, rack.rings]) if (m) { group.remove(m); m.dispose(); }
   rack.facade = null;
   computePlaces(rack);
   rack.seps = [];
@@ -453,7 +455,8 @@ function rebuildRings() {
     const { k, c, r, u } = parseId(id); if (!inRack(k, c, r)) continue;
     const rack = racks[k];
     // Case maçonnée : un anneau autour de la bouteille trouvée ; ailleurs, autour de l'emplacement.
-    const pos = u ? bottleLocal(records.get(id) || {}) : slotLocal(rack, c, r); if (!pos) continue;
+    const rec = records.get(id);   // une bouteille allumée a pu être retirée depuis
+    const pos = u ? (rec ? bottleLocal(rec) : null) : slotLocal(rack, c, r); if (!pos) continue;
     const s = u ? BOTTLE_D / 0.18 : rack.ringS;
     rack.rings.setMatrixAt(count[k]++, tmpM.compose(tmpP.set(pos[0], pos[1], BOTTLE_OUT + 0.004), IDQ, tmpS.setScalar(s)));
   }
@@ -645,6 +648,7 @@ function updateHero(now) {
 const sizesOf = (k, axis) => (axis === 'col' ? rk[k].colW : rk[k].rowH);
 function startAdjust(k) {
   if (!racks[k]?.isCases) return;
+  if (adjust) endAdjust(false);   // un seul réglage à la fois : l'éventuel précédent est abandonné
   closeSheet(); endMode(); $('results').hidden = true;
   const g = racks[k].grid;
   adjust = { k, before: { colW: rk[k].colW, rowH: rk[k].rowH }, sel: null, drag: null };
@@ -701,7 +705,7 @@ function sizeAccepted(k, axis, index, size) {
   for (let j = 0; j < n; j++) {
     const [c, r] = axis === 'col' ? [index, j] : [j, index];
     const w = axis === 'col' ? size : colW[c], h = axis === 'col' ? rowH[r] : size;
-    if (casePlaces(w, h).length < pileOf(allBottles(), slotId(k, c, r)).length) return false;
+    if (casePlaces(w, h).length < (adjust.drag.counts.get(slotId(k, c, r)) || 0)) return false;
   }
   return true;
 }
@@ -730,7 +734,11 @@ canvas.addEventListener('pointerdown', (e) => {
   if (adjust) {   // un doigt sur une séparation : elle s'allume et suit le doigt ; ailleurs : on fait défiler
     adjust.drag = null;
     const l = pointers.size === 1 && rackPoint(adjust.k, e.clientX, e.clientY), sep = l && sepAt(adjust.k, l);
-    if (sep) { adjust.sel = sep; adjust.drag = { from: l, sizes: [...sizesOf(adjust.k, sep.axis)] }; tapStart = null; paintSeps(racks[adjust.k]); }
+    if (sep) {
+      // Nombre de bouteilles par case, compté une fois au début du geste (et non à chaque mouvement du doigt)
+      const counts = new Map(); for (const b of allBottles()) if (parseId(b.id).u) counts.set(caseIdOf(b.id), (counts.get(caseIdOf(b.id)) || 0) + 1);
+      adjust.sel = sep; adjust.drag = { from: l, sizes: [...sizesOf(adjust.k, sep.axis)], counts }; tapStart = null; paintSeps(racks[adjust.k]);
+    }
   }
 });
 canvas.addEventListener('pointermove', (e) => {
@@ -920,6 +928,8 @@ function openSheet(title, html, tall = false) {
 function closeSheet() {
   scanToken++;
   const had = selected; $('sheet').hidden = true; $('sheetBody').innerHTML = ''; hideHero(); selRing.visible = false; selected = null;
+  // Bouteilles allumées depuis une fiche Case : on les éteint en la fermant (sauf recherche en cours)
+  if (had?.caseId && !$('search').value.trim() && highlighted.length) { highlighted = []; rebuildRings(); }
   if (had && view.mode === 'rack') {
     // Retour au cadrage du casier (après le zoom sur une case), en restant à hauteur de la case qu'on vient de quitter
     const rack = racks[view.key];
@@ -1475,6 +1485,7 @@ async function clearPart(act) {
   const list = recordsIn(allBottles(), k, what);
   if (!list.length) return toast(`Rien à vider dans ${label}`);
   if (!await ask(`Vider ${label} (${RACK_NAMES[k]}) ? ${list.length} fiche(s), ${totalBottles(list)} bouteille(s) seront retirées de la cave.`, 'Vider')) return;
+  list.sort((a, b) => (b.pile ?? 0) - (a.pile ?? 0));   // cases maçonnées : « Annuler » rejoue du haut vers le bas
   const ids = list.map((b) => b.id);
   if (!await persist((st) => st.removeMany(ids))) return;
   for (const id of ids) records.delete(id);
@@ -1675,7 +1686,8 @@ async function clearDemo() {
   const left = allBottles().filter((b) => !ids.has(b.id)), fixes = [];
   for (const caseId of new Set(list.filter((b) => parseId(b.id).u).map((b) => caseIdOf(b.id)))) fixes.push(...normalizePile(left, caseId));
   if (!await persistBatch(fixes, [...ids])) return [];
-  return list;
+  // Pour « Annuler » : comme si on les avait retirées du haut vers le bas (chaque rang reste alors valable)
+  return list.sort((a, b) => (b.pile ?? 0) - (a.pile ?? 0));
 }
 /**
  * Passage aux cases en pile (0.4.0). Appareil de test (seulement des exemples) : exemples régénérés au nouveau

@@ -298,24 +298,19 @@ export function removeFromPile(list, id) {
 }
 
 /**
- * « Annuler » des retraits : remet les bouteilles retirées à leur ancien rang et fait remonter celles qui y sont
- * maintenant (y compris une bouteille ajoutée entre-temps, qui reste dans la case, au-dessus).
- * @param {object[]} removed fiches telles qu'avant le retrait (avec leur ancien `pile`)
+ * « Annuler » des retraits : remet les bouteilles retirées dans leur pile et fait remonter celles du dessus
+ * (une bouteille ajoutée entre-temps reste dans la case). Les bouteilles sont remises dans l'ordre INVERSE des
+ * retraits, chacune au rang qu'elle avait au moment de SON retrait : on rejoue ainsi les retraits à l'envers,
+ * même si deux bouteilles ont été retirées au même rang (la bouteille du bas bue deux fois).
+ * @param {object[]} removed fiches dans l'ordre des retraits, chacune avec son rang au moment du retrait
  * @returns {object[]} fiches à réécrire
  */
 export function undoRemoval(list, removed) {
-  const out = [];
+  const out = [], ids = new Set(removed.map((b) => b.id));
   for (const caseId of new Set(removed.map((b) => caseIdOf(b.id)))) {
-    const back = removed.filter((b) => caseIdOf(b.id) === caseId).sort(byPile);
-    const others = pileOf(list, caseId).filter((b) => !back.some((x) => x.id === b.id));
-    // Chaque bouteille retirée reprend son ancien rang ; les autres gardent leur ordre et comblent le reste.
-    let k = 0;
-    const result = [];
-    for (let rank = 0; rank < back.length + others.length; rank++) {
-      const wanted = back.find((b) => (b.pile ?? 0) === rank);
-      result.push(wanted || others[k++]);
-    }
-    result.forEach((b, i) => { if (b.pile !== i || back.includes(b)) out.push({ ...b, pile: i }); });
+    const pile = pileOf(list, caseId).filter((b) => !ids.has(b.id));
+    for (const b of removed.filter((x) => caseIdOf(x.id) === caseId).reverse()) pile.splice(clamp(Number(b.pile) || 0, 0, pile.length), 0, b);
+    pile.forEach((b, i) => { if (b.pile !== i || ids.has(b.id)) out.push({ ...b, pile: i }); });
   }
   return out;
 }
@@ -390,7 +385,7 @@ export function rackGrid(rackCfg) {
 
 /**
  * Déplace la séparation entre `sizes[i]` et `sizes[i + 1]` de `delta` mètres (au centimètre), sans changer
- * la somme. La séparation s'arrête à la dernière position où les deux tailles restent ≥ CASE_MIN et acceptées
+ * la somme. La séparation s'arrête à la dernière position où les deux tailles restent entre CASE_MIN et CASE_MAX et acceptées
  * par `accept(index, taille)` (par exemple : la case garde assez de places pour ses bouteilles).
  * @returns {number[]} nouvelles tailles (copie)
  */
@@ -399,7 +394,7 @@ export function moveSeparator(sizes, i, delta, accept) {
   const steps = Math.round(Math.abs(delta) * 100), dir = Math.sign(delta);
   for (let s = 1; s <= steps; s++) {
     const a = cm(sizes[i] + dir * s / 100), b = cm(pair - a);
-    if (a < CASE_MIN - EPS || b < CASE_MIN - EPS || !accept(i, a) || !accept(i + 1, b)) break;
+    if (a < CASE_MIN - EPS || b < CASE_MIN - EPS || a > CASE_MAX + EPS || b > CASE_MAX + EPS || !accept(i, a) || !accept(i + 1, b)) break;
     out[i] = a; out[i + 1] = b;
   }
   return out;

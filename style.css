@@ -169,3 +169,6 @@ body.rack-mode #hint { font-size: 14px; bottom: calc(var(--sab) + 92px);
 #adjustBar button { flex: 1; border-radius: 12px; padding: 12px 14px; min-height: 48px; font-weight: 600; background: #fff; color: var(--navy); border: 1px solid #d8c48a; }
 #adjustBar #adjustDone { background: var(--navy); color: #fff; border: 0; }
 body.adjusting #hint { display: none; }
+/* Pendant le réglage, ni recherche ni menu : ils agiraient sur des séparations pas encore validées */
+body.adjusting #topbar, body.adjusting #results { display: none; }
+body.adjusting #adjustBar { top: calc(var(--sat) + 12px); }
