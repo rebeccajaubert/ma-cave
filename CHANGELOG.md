@@ -3,6 +3,11 @@
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), versionnement [sémantique](https://semver.org/lang/fr/) :
 `MAJEUR.MINEUR.CORRECTIF`. Le numéro de version est défini dans `version.js` (voir README, « Publier une version »).
 
+## [0.3.2] - 2026-11-21
+
+### Ajouté
+- **Page de dépannage `maj.html`** : débloque un appareil resté sur une très ancienne version (y compris dans Safari) en retéléchargeant l'application et en retirant l'ancienne copie hors-ligne, sans toucher aux bouteilles, aux réglages ni à la clé. Les anciennes versions ne l'ont jamais gardée en copie : elle est toujours lue sur le site.
+
 ## [0.3.1] - 2026-11-21
 
 ### Ajouté

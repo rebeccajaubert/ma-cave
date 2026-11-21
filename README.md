@@ -31,7 +31,7 @@ Un emplacement est soit *enregistré* (une fiche existe : la bouteille apparaît
 
 La version installée est affichée **en haut du menu** (bouton ☰ en haut à droite), avec un bouton **« Mettre à jour »**. Au lancement, un bandeau vert annonce aussi toute nouvelle version publiée. La mise à jour retélécharge l'application depuis le site ; les bouteilles, les réglages et la clé de lecture sont conservés.
 
-Les toutes premières versions (avant 0.3.1) n'ont pas ce bouton et peuvent rester bloquées sur iPhone : supprimer l'icône puis réinstaller depuis Safari (attention, cela efface les fiches de cet appareil).
+Les toutes premières versions (avant 0.3.1) n'ont pas ce bouton et peuvent rester bloquées, dans l'app comme dans Safari. **Dépannage** : ouvrir <https://rebeccajaubert.github.io/ma-cave/maj.html> dans Safari. Cette page retélécharge l'application et retire l'ancienne copie hors-ligne, sans toucher aux bouteilles, aux réglages ni à la clé. Pour une icône d'écran d'accueil restée bloquée, la solution reste de la supprimer puis de réinstaller depuis Safari (cela efface les fiches de cette icône).
 
 ## Rangement
 

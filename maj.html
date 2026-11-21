@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mise à jour de Ma Cave</title>
+<meta name="theme-color" content="#0f2a4d">
+<meta name="robots" content="noindex">
+<style>
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #0f2a4d;
+    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; color: #10294a; }
+  main { background: #fff; border-radius: 22px; padding: 28px 22px; margin: 20px; max-width: 420px; text-align: center; }
+  h1 { font-size: 22px; margin: 0 0 12px; }
+  p { font-size: 17px; line-height: 1.45; margin: 0 0 16px; color: #3d5170; }
+  a { display: inline-block; background: #10294a; color: #fff; text-decoration: none; font-weight: 700; padding: 14px 22px; border-radius: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Mise à jour de Ma Cave</h1>
+  <p id="msg">Téléchargement de la dernière version…</p>
+  <a id="go" href="./" hidden>Ouvrir Ma Cave</a>
+</main>
+<script>
+// Page de dépannage : débloque un appareil resté sur une ancienne version.
+// Les toutes premières versions gardaient toujours leur copie hors-ligne ; cette page n'en fait pas partie,
+// elle est donc toujours lue sur le site. Elle retélécharge l'application, efface les copies hors-ligne
+// et le service worker, puis ouvre la nouvelle version.
+// Elle ne touche JAMAIS aux bouteilles (IndexedDB) ni aux réglages et à la clé (localStorage).
+(async () => {
+  const say = (t) => { document.getElementById('msg').textContent = t; };
+  try {
+    // Liste des fichiers de l'app, lue sur le site (le paramètre évite toute copie gardée)
+    const src = await (await fetch(`version.js?t=${Date.now()}`, { cache: 'no-store' })).text();
+    const files = [...(/APP_FILES\s*=\s*\[([^\]]+)\]/.exec(src)?.[1] || '').matchAll(/'([^']+)'/g)].map((m) => m[1]);
+    const version = /APP_VERSION\s*=\s*'([^']+)'/.exec(src)?.[1] || '';
+    if (!files.length) throw new Error('liste des fichiers introuvable');   // pas de réseau ou site indisponible : rien n'a été touché
+    // La lecture de version.js ci-dessus vient du réseau : la connexion fonctionne.
+    // 1. Effacer d'abord les copies hors-ligne : sinon l'ancien service worker répondrait avec elles
+    //    (il sert sa copie en priorité) et on ne vérifierait pas les vrais fichiers du site.
+    if ('caches' in self) for (const k of await caches.keys()) await caches.delete(k);
+    // 2. Retélécharger chaque fichier depuis le site (remplace aussi les copies gardées par le navigateur)
+    const ok = await Promise.all(files.map((f) => fetch(f, { cache: 'reload' }).then((r) => r.ok).catch(() => false)));
+    if (ok.includes(false)) { say('La connexion s\'est interrompue : réessayez dès que vous avez du réseau. Vos bouteilles sont intactes, mais d\'ici là l\'application ne s\'ouvrira qu\'avec du réseau.'); return; }
+    // 3. Retirer l'ancien service worker et les copies qu'il aurait refaites, puis ouvrir la nouvelle version
+    if ('serviceWorker' in navigator) for (const reg of await navigator.serviceWorker.getRegistrations()) await reg.unregister();
+    if ('caches' in self) for (const k of await caches.keys()) await caches.delete(k);
+    try { sessionStorage.setItem('cave-maj-attendue', version); } catch { /* sans stockage */ }
+    say(`Version ${version} prête. Ouverture…`);
+    location.replace(`./?maj=${Date.now()}`);
+  } catch (e) {
+    say('La mise à jour n\'a pas pu se faire : vérifiez la connexion et réessayez.');
+    console.error(e);
+  } finally {
+    document.getElementById('go').hidden = false;
+  }
+})();
+</script>
+</body>
+</html>
