@@ -14,7 +14,7 @@ Le bouton « Gérer ce casier » n'est pas clair : on le remplace par un geste d
 
 1. **Une place par bouteille dans les cases maçonnées.** Chaque bouteille a son adresse : casier, colonne, rangée, place dans la case. Elle a sa propre fiche (choix « B2 » de Rebecca : une fiche par bouteille).
 2. **Nombre de places calculé d'après la taille de la case** (choix « A1 ») : bouteilles de 8 cm de diamètre, en quinconce.
-3. **Ordre de remplissage en pile** (idée de Rebecca) : on part du coin en bas à droite, la rangée du bas de droite à gauche, puis la rangée au-dessus, etc.
+3. **Chaque case est une pile** (idée de Rebecca) : on part du coin en bas à droite, la rangée du bas de droite à gauche, puis la rangée au-dessus, etc. Une bouteille ajoutée va toujours en haut ; une bouteille retirée fait descendre celles du dessus.
 4. **Séparations réglables dans les deux sens** : on touche une ligne (horizontale ou verticale), elle s'allume, et on la fait glisser.
 5. **Case zoomée** : toucher une case la montre en grand avec la liste de ce qu'elle contient. Toucher une bouteille ouvre sa fiche ; toucher une place vide propose d'y ranger une bouteille.
 6. Retirer le bouton « Gérer ce casier ».
@@ -36,7 +36,7 @@ Le bouton « Gérer ce casier » n'est pas clair : on le remplace par un geste d
 ## Contraintes
 
 - Règles du projet (CLAUDE.md) : écrire avant de confirmer, confirmer toute suppression, « Annuler » après les suppressions, `esc()` sur tout texte, logique pure dans `lib.js` avec tests, versionnement (0.4.0), README à jour, relecture `code-reviewer`.
-- Données actuelles : Rebecca n'a que des bouteilles d'exemple, inutile de les préserver. Elles sont **régénérées** au nouveau format. *Choix de Claude, pour respecter la règle « garder les anciennes fiches lisibles » à moindre coût : une éventuelle vraie fiche d'ancien format dans une case maçonnée (`G:c:r` avec quantité q) devient q fiches aux places 0 à q−1 de sa case, au premier lancement de la 0.4.0. Si la case est trop petite, les bouteilles en trop vont aux places suivantes libres de la même case ; s'il n'y en a plus, la fiche est gardée telle quelle et listée dans « Liste de mes bouteilles » avec la mention « à ranger ».*
+- Données actuelles : Rebecca n'a que des bouteilles d'exemple, inutile de les préserver. Elles sont **régénérées** au nouveau format. *Choix de Claude, pour respecter la règle « garder les anciennes fiches lisibles » à moindre coût : une éventuelle vraie fiche d'ancien format dans une case maçonnée (`G:c:r` avec quantité q) devient q fiches aux rangs 0 à q−1 de la pile de sa case, au premier lancement de la 0.4.0. Si la case n'a pas assez de places, les bouteilles en trop restent dans une fiche d'ancien format, listée dans « Liste de mes bouteilles » avec la mention « à ranger ».*
 
 ## Approches considérées
 
@@ -52,7 +52,14 @@ Le bouton « Gérer ce casier » n'est pas clair : on le remplace par un geste d
 
 ### Données
 
-- **Identifiant d'une bouteille de case maçonnée** : `K:c:r:i:j`, où i est la rangée de bouteilles dans la case (0 = en bas) et j le rang dans cette rangée, compté depuis la droite (0 = la plus à droite). Les autres types gardent `K:c:r`. `isValidId` et `parseId` acceptent les deux formes (`i` et `j` valent `null` sans place). *Choix de Claude, à la suite de la relecture : un simple numéro dans la pile ferait sauter une bouteille d'une rangée à l'autre quand on change la largeur de la case (la 7ᵉ du bas deviendrait la 1ʳᵉ de la rangée du dessus), alors que la vraie bouteille n'a pas bougé. Avec (rangée, rang depuis la droite), une bouteille reste dans sa rangée et à son rang quelle que soit la taille de la case.*
+- **Une case est une pile** (précision de Rebecca) : ses bouteilles occupent toujours les premières places de l'ordre de la pile, sans trou. Une bouteille ajoutée va **toujours en haut de la pile**. Quand une bouteille est retirée (bue, déplacée, vidée), **celles qui étaient au-dessus d'elle descendent d'un cran** pour prendre sa place.
+- **Fiche d'une bouteille de case maçonnée** :
+  - identifiant stable `K:c:r:u`, où `K:c:r` est la case et `u` un suffixe unique (base 36, généré à la création) ; il ne change pas quand la bouteille descend dans la pile ;
+  - champ `pile` : son rang dans la pile (0 = coin en bas à droite, la première rangée).
+
+  Les autres types gardent `K:c:r`. `isValidId` et `parseId` acceptent les deux formes (`u` vaut `null` sans suffixe).
+- **Retirer une bouteille** = supprimer sa fiche **et** décrémenter `pile` de toutes les bouteilles de la case qui étaient au-dessus, dans **une seule transaction** IndexedDB (sinon un échec à mi-chemin laisserait un trou ou deux bouteilles au même rang). « Annuler » remet la fiche et les rangs d'avant, aussi en une transaction. `db.js` reçoit pour cela une opération groupée (écrire et supprimer ensemble).
+- Fonctions pures dans `lib.js` : `pileOf(list, caseId)` (bouteilles d'une case triées par rang), `pushToPile(list, caseId, n)` (rangs des n nouvelles bouteilles), `removeFromPile(list, id)` (fiches à réécrire et à supprimer), `normalizePile` (remet des rangs 0…n−1 sans trou ni doublon si des données incohérentes sont lues).
 - Une fiche de case maçonnée n'a pas de quantité (toujours 1 bouteille).
 - **Réglage** (révision `CONFIG_REV = 3`) : un casier en cases maçonnées peut porter
   - `colW` : largeur de chaque colonne en mètres, de l'entrée vers le fond ;
@@ -66,9 +73,8 @@ Le bouton « Gérer ce casier » n'est pas clair : on le remplace par un geste d
 - Diamètre d'une bouteille D = 0,08 m, marge de 1 cm sur les bords.
 - Rangée du bas : n = ⌊(w − 0,02) / D⌋ places. La rangée suivante a n − 1 places, décalées d'un demi-diamètre. On alterne n, n−1, n… L'écart vertical entre rangées vaut D × sin 60°. On ajoute des rangées tant qu'elles tiennent dans h − 0,02.
 - Exemple : une case de 60 × 38 cm donne 7 + 6 + 7 + 6 + 7 = 33 places. *La constante D se règle à l'essai sur une photo de la cave ; à ajuster si 33 semble trop.*
-- Renvoie, pour chaque rangée i, le nombre de places et la position de chaque place (i, j) (centre de la bouteille, relatif au centre de la case). « Droite » est la droite vue depuis l'allée, face au casier.
-- **Ordre de la pile** : rangée 0 de droite à gauche (j = 0, 1, 2…), puis rangée 1, etc.
-- `nextFreePlaces(occupied, places, n)` : les n premières places libres dans cet ordre (une place libérée au milieu est réutilisée en premier).
+- Renvoie la liste des positions (centre de la bouteille, relatif au centre de la case) **dans l'ordre de la pile** : rangée du bas de droite à gauche, puis la rangée au-dessus de droite à gauche, etc. « Droite » est la droite vue depuis l'allée, face au casier. La bouteille de rang k est dessinée à la k-ième position ; la capacité de la case est le nombre de positions.
+- Changer la taille d'une case reforme la pile à la nouvelle largeur : les bouteilles gardent leur ordre, mais une bouteille peut passer en fin de rangée ou au début de la rangée du dessus. C'est le comportement d'une pile, et on règle les séparations une fois, au début.
 
 ### Dessin 3D
 
@@ -87,10 +93,10 @@ Le bouton « Gérer ce casier » n'est pas clair : on le remplace par un geste d
    
    Toucher une ligne de la liste allume ces bouteilles dans la case.
 3. **Dans la case zoomée** :
-   - toucher une bouteille l'entoure et ouvre **sa fiche** (même fiche qu'aujourd'hui : modifier, déplacer, « j'ai la même ailleurs », « bouteille bue : la retirer ») ;
-   - toucher une place vide propose « Ranger une bouteille ici ».
-4. **Ajouter des bouteilles** : le formulaire actuel, avec un compteur « Nombre de bouteilles » (− / +). On enregistre N fiches identiques aux N prochaines places libres de la pile. S'il manque de la place : « Il ne reste que X places dans cette case » et l'enregistrement est bloqué.
-5. **Déplacer / J'ai la même ailleurs** : en vue casier, toucher une case range la bouteille à sa prochaine place libre ; en case zoomée, toucher une place vide la range exactement là. Le bandeau actuel est conservé.
+   - toucher une bouteille l'entoure et ouvre **sa fiche** (même fiche qu'aujourd'hui : modifier, déplacer, « j'ai la même ailleurs », « bouteille bue : la retirer ») ; la retirer fait descendre celles du dessus ;
+   - toucher une place vide rouvre simplement la fiche Case (on ne choisit pas une place : on ajoute toujours en haut de la pile).
+4. **Ajouter des bouteilles** : le formulaire actuel, avec un compteur « Nombre de bouteilles » (− / +). On enregistre N fiches identiques **en haut de la pile**. S'il manque de la place : « Il ne reste que X places dans cette case » et l'enregistrement est bloqué.
+5. **Déplacer / J'ai la même ailleurs** : toucher une case (en vue casier ou zoomée) range la bouteille **en haut de sa pile**. Un déplacement écrit d'abord la bouteille dans la nouvelle case, puis la retire de l'ancienne (qui se tasse). Le bandeau actuel est conservé.
 6. **Aide aux corrections (proposition de Claude, en complément de B2)** : après « Modifier la fiche » d'une bouteille, si d'autres bouteilles de la **même case** avaient exactement le même vin (nom et millésime) avant la modification, l'app demande : « Appliquer aussi ces changements aux 5 autres bouteilles identiques de cette case ? ».
 7. **Liste, recherche, « À boire bientôt »** : une ligne par vin et par case, avec « × 6 », plutôt que 6 lignes identiques. Toucher la ligne ouvre la case zoomée, avec ces bouteilles allumées.
 
@@ -100,7 +106,7 @@ Le bouton « Gérer ce casier » n'est pas clair : on le remplace par un geste d
 - Le casier s'affiche de face avec un bandeau en haut : « Touchez une séparation, puis faites-la glisser » et les boutons **Terminé** et **Annuler**.
 - Toucher une ligne (zone de toucher élargie, au moins 44 px) l'allume en orange, avec une poignée ronde. Glisser à partir de la ligne la déplace ; glisser ailleurs fait défiler le casier comme d'habitude. On ne peut sélectionner qu'une ligne à la fois.
 - Seules les séparations **intérieures** bougent : la case de chaque côté grandit ou rétrécit d'autant, et la taille totale du casier ne change pas (elle se règle par le nombre de colonnes et de rangées).
-- Pas de 1 cm. Taille minimale d'une case : 10 cm. **Une séparation s'arrête d'elle-même** au point où une case perdrait une place occupée : chaque rangée i qui contient une bouteille au rang j doit garder au moins j + 1 places, et la case doit garder au moins (i max occupée + 1) rangées. Aucune bouteille ne peut donc disparaître ni changer de rangée, et aucun avertissement n'est nécessaire.
+- Pas de 1 cm. Taille minimale d'une case : 10 cm. **Une séparation s'arrête d'elle-même** au point où une case n'aurait plus assez de places pour ses bouteilles (capacité ≥ nombre de bouteilles). Aucune bouteille ne peut donc disparaître, et aucun avertissement n'est nécessaire.
 - Pendant le glissement : la case, ses places et ses bouteilles se redessinent en direct, et sa taille s'affiche (« 52 × 40 cm »).
 - **Terminé** enregistre le réglage ; **Annuler** remet les séparations d'avant.
 - Réduire le nombre de colonnes ou de rangées dans « Rangement de la cave » garde l'avertissement actuel (fiches hors des dimensions, conservées mais invisibles).
@@ -120,14 +126,14 @@ Au premier lancement de la 0.4.0, les exemples sont retirés puis régénérés 
 - La technique de dessin des cases et des séparations, et la détection du toucher sur une ligne.
 - Le cadrage exact de la caméra sur une case zoomée (réutiliser le cadrage actuel dans la partie libre de l'écran).
 - L'organisation du code de `app.js` (fonctions nouvelles ou adaptées).
-- Les tests de `lib.js` : `casePlaces`, `nextFreePlaces`, identifiants à 4 parties, normalisation de `colW` et `rowH`, et la fonction de déplacement d'une séparation avec ses butées (taille minimale, places occupées).
+- Les tests de `lib.js` : `casePlaces`, fonctions de pile (`pileOf`, `pushToPile`, `removeFromPile`, `normalizePile`), identifiants à 4 parties, normalisation de `colW` et `rowH`, et la fonction de déplacement d'une séparation avec ses butées (taille minimale, capacité ≥ nombre de bouteilles).
 
 ## Vérification
 
 - `npm test` (dont le test des variables non déclarées).
 - iPhone (simulateur, format iPhone) :
   - ouvrir une case, ajouter 6 bouteilles puis 3 d'un autre vin, vérifier l'ordre de la pile ;
-  - boire une bouteille du milieu, en ajouter une, vérifier qu'elle comble le trou ;
+  - boire une bouteille du milieu : celles du dessus descendent ; « Annuler » remet tout comme avant ; en ajouter une : elle va en haut de la pile ;
   - rechercher un vin, vérifier les anneaux sur les bonnes bouteilles ;
   - déplacer une bouteille vers une autre case ;
   - régler des séparations dans les deux sens, y compris jusqu'à la butée d'une case pleine ;
