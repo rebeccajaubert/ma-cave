@@ -1133,6 +1133,34 @@ async function forceUpdate(expected) {
   location.replace(`./?maj=${Date.now()}`);   // adresse neuve : la page elle-même est rechargée depuis le site
 }
 
+// Le service worker annonce qu'une nouvelle version vient de s'activer : on recharge tout de suite,
+// sauf si une fiche ou un menu est ouvert (saisie en cours) : dans ce cas, un bandeau propose de le faire.
+navigator.serviceWorker?.addEventListener('message', (e) => {
+  if (e.data?.type !== 'nouvelle-version') return;
+  e.ports?.[0]?.postMessage('ok');   // « je m'en occupe » : le service worker ne recharge pas la page d'office
+  if (e.data.version && !isNewerVersion(e.data.version, APP_VERSION)) return;   // déjà à jour
+  // Rien en cours (fiche, menu, dialogue, mode copie/déplacement, recherche, lecture d'étiquette, saisie) : on recharge.
+  const busy = !$('sheet').hidden || mode || !$('dialog').hidden || !$('banner').hidden || $('search').value.trim()
+    || document.querySelector('[data-scanning]') || ['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName);
+  if (!busy) { location.reload(); return; }
+  $('updateText').textContent = `Nouvelle version ${e.data.version || ''} prête`;
+  $('updateBtn').onclick = () => location.reload();
+  $('updateBar').hidden = false;
+});
+
+// Rouvrir l'app depuis l'icône reprend souvent la page restée en mémoire, sans la recharger : aucune mise à jour
+// n'est alors cherchée. On vérifie donc aussi à chaque retour au premier plan (au plus toutes les 2 minutes).
+// Si une nouvelle version existe, le service worker l'installe puis prévient la page (voir l'écouteur ci-dessus).
+const UPDATE_CHECK_EVERY = 2 * 60 * 1000;
+let lastUpdateCheck = Date.now();
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || ['localhost', '127.0.0.1'].includes(location.hostname)) return;
+  if (Date.now() - lastUpdateCheck < UPDATE_CHECK_EVERY) return;
+  lastUpdateCheck = Date.now();
+  navigator.serviceWorker?.getRegistration().then((reg) => reg?.update()).catch(() => {});
+  checkForUpdate();   // bandeau de secours si le service worker ne peut pas se mettre à jour
+});
+
 // ---------- Aides à la prise en main ----------
 /** Mode d'emploi en 4 étapes, affiché au premier lancement et depuis le menu. */
 function showWelcome() {

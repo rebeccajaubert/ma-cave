@@ -6,6 +6,9 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), ver
 ## [0.3.2] - 2026-11-21
 
 ### Ajouté
+- **Vérification des mises à jour à chaque retour dans l'app** (iOS reprend souvent l'app sans la recharger).
+- **Mise à jour automatique** : dès qu'une nouvelle version est arrivée, les pages ouvertes passent toutes seules à cette version (même depuis les toutes premières versions). Si une fiche est en cours de saisie, un bandeau propose de le faire au bon moment.
+- Les fichiers sont chargés avec le numéro de version dans leur adresse : après une mise à jour, Safari ne peut plus mélanger d'anciens et de nouveaux fichiers.
 - **Page de dépannage `maj.html`** : débloque un appareil resté sur une très ancienne version (y compris dans Safari) en retéléchargeant l'application et en retirant l'ancienne copie hors-ligne, sans toucher aux bouteilles, aux réglages ni à la clé. Les anciennes versions ne l'ont jamais gardée en copie : elle est toujours lue sur le site.
 
 ## [0.3.1] - 2026-11-21

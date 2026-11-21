@@ -9,7 +9,7 @@ const walk = require('internal/deps/acorn/acorn-walk/dist/walk');
 
 // Variables globales du navigateur, du service worker et de JavaScript utilisées par l'app.
 const GLOBALS = new Set(`window self globalThis document location history navigator localStorage sessionStorage indexedDB fetch
-Response Request Headers URL URLSearchParams Image File Blob DataTransfer FormData Event CustomEvent AbortController
+Response Request Headers URL URLSearchParams MessageChannel Image File Blob DataTransfer FormData Event CustomEvent AbortController
 console setTimeout clearTimeout setInterval clearInterval requestAnimationFrame cancelAnimationFrame performance
 createImageBitmap structuredClone getComputedStyle confirm alert caches importScripts clients
 Promise Math JSON Object Array String Number Boolean Date Map Set WeakMap Symbol Error TypeError RangeError

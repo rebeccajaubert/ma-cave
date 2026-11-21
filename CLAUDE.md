@@ -14,7 +14,7 @@ Application web (PWA) : maquette 3D d'une cave à vin pour l'iPhone d'un public 
 - **Les données des utilisateurs sont sacrées** : écrire avant de confirmer, enregistrer la nouvelle place avant de libérer l'ancienne, confirmer toute suppression, garder les anciennes fiches lisibles quand le format évolue.
 - **Commentaires en français** sur toute logique non évidente ; JSDoc sur les fonctions exportées ; le « pourquoi » plutôt que le « quoi ».
 - **Tests** : toute logique pure va dans `lib.js` / `scan.js` avec un test dans `tests/`.
-- **Versionnement** : tout changement visible par l'utilisateur met à jour `version.js`, `package.json` et `CHANGELOG.md` (le test `tests/version.test.js` vérifie qu'ils concordent). Un nouveau fichier de l'app doit être ajouté à `APP_FILES` dans `version.js` (utilisée par le service worker et par le bouton « Mettre à jour »).
+- **Versionnement** : tout changement visible par l'utilisateur met à jour `version.js`, `package.json` et `CHANGELOG.md` ainsi que les `?v=` de `index.html` (le test `tests/version.test.js` vérifie qu'ils concordent). Un nouveau fichier de l'app doit être ajouté à `APP_FILES` dans `version.js` (utilisée par le service worker et par le bouton « Mettre à jour »).
 - **README.md à jour** : fonctionnalités, structure et procédure dès qu'elles changent.
 
 ## Relecture obligatoire

@@ -10,10 +10,36 @@ self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES.map((f) => new Request(f, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
-// Supprime les caches des anciennes versions.
+// Supprime les caches des anciennes versions, prend la main sur les pages ouvertes et, s'il s'agit d'une
+// mise à jour, les fait passer tout de suite à la nouvelle version (sans qu'on ait à recharger soi-même).
 self.addEventListener('activate', (e) => {
-  e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
+  e.waitUntil((async () => {
+    const keys = await caches.keys();
+    const isUpdate = keys.some((k) => k !== CACHE);   // un ancien cache existait : ce n'est pas une première installation
+    await Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)));
+    await self.clients.claim();
+    // Surtout pas « await » ici : tant que l'activation n'est pas terminée, le navigateur met en attente
+    // les requêtes des pages ; recharger une page pendant l'activation la bloquerait indéfiniment.
+    if (isUpdate) setTimeout(refreshOpenPages, 0);
+  })());
 });
+
+/**
+ * Prévient chaque page ouverte qu'une nouvelle version est active. Une page récente répond et choisit
+ * elle-même (recharger tout de suite, ou proposer un bandeau si une fiche est en cours de saisie) ;
+ * une ancienne page, qui ne sait pas répondre en 3 secondes, est rechargée d'office.
+ */
+async function refreshOpenPages() {
+  const pages = await self.clients.matchAll({ type: 'window' });
+  await Promise.all(pages.map(async (page) => {
+    const handled = await new Promise((resolve) => {
+      const channel = new MessageChannel(), timer = setTimeout(() => resolve(false), 3000);   // une page récente répond vite ; 3 s laissent de la marge à une page lente
+      channel.port1.onmessage = () => { clearTimeout(timer); resolve(true); };
+      page.postMessage({ type: 'nouvelle-version', version: self.APP_VERSION }, [channel.port2]);
+    });
+    if (!handled) { try { await page.navigate(page.url); } catch { /* navigateur sans navigate() : la page passera à la prochaine ouverture */ } }
+  }));
+}
 
 // Réseau d'abord (version à jour, et cohérente entre la page et le code), cache si pas de réseau.
 // Au fond de la cave, sans réseau, la réponse vient du cache tout de suite ; avec un réseau très lent,

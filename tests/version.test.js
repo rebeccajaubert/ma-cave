@@ -23,3 +23,14 @@ test('la liste des fichiers (version.js) contient toute l\'application et ils ex
   for (const f of files.filter((x) => x !== './')) assert.doesNotThrow(() => read(f), `${f} est listé mais n'existe pas`);
   assert.match(read('sw.js'), /FILES = self\.APP_FILES/, 'le service worker doit utiliser APP_FILES');
 });
+
+test('index.html charge les fichiers avec le numéro de la version (?v=), modules compris', () => {
+  const html = read('index.html'), version = /APP_VERSION\s*=\s*'([^']+)'/.exec(read('version.js'))?.[1];
+  const tags = [...html.matchAll(/\?v=([0-9.]+)/g)].map((m) => m[1]);
+  assert.ok(tags.length >= 6, 'style.css, version.js, app.js et les modules doivent avoir ?v=');
+  for (const t of tags) assert.equal(t, version, `?v=${t} ne correspond pas à la version ${version}`);
+  for (const f of ['style.css', 'version.js', 'app.js', './lib.js', './db.js', './scan.js']) assert.ok(html.includes(`${f}?v=`), `${f} sans ?v=`);
+  // tout module importé par app.js doit être dans la table d'import, sinon Safari pourrait en garder une vieille copie
+  const imports = [...read('app.js').matchAll(/from '(\.\/[^']+)'/g)].map((m) => m[1]).filter((f) => !f.includes('vendor/'));
+  for (const f of imports) assert.ok(html.includes(`"${f}": "${f}?v=`), `${f} manque dans la table d'import de index.html`);
+});
