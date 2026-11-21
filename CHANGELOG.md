@@ -3,6 +3,25 @@
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), versionnement [sémantique](https://semver.org/lang/fr/) :
 `MAJEUR.MINEUR.CORRECTIF`. Le numéro de version est défini dans `version.js` (voir README, « Publier une version »).
 
+## [0.4.0] - 2026-11-21
+
+### Ajouté
+- **Cases maçonnées en pile, une fiche par bouteille.** Toucher une case la montre en grand, avec son contenu groupé par vin et le nombre de places libres. Chaque bouteille a sa place : la pile part du coin en bas à droite ; une bouteille ajoutée va en haut ; une bouteille retirée (bue, déplacée) fait descendre celles du dessus. Toucher une bouteille ouvre sa fiche, qui dit où elle est dans la pile.
+- **Ajouter des bouteilles** dans une case : nombre de bouteilles à ajouter ; refus clair s'il ne reste pas assez de places.
+- Après la modification d'une bouteille, l'app propose d'appliquer les mêmes changements aux bouteilles identiques (même vin, même millésime) de la case.
+- **Ajuster les séparations** (menu → Rangement de la cave) : on touche une séparation, verticale ou étagère, elle s'allume et on la fait glisser. Les étagères traversent tout le casier. Une séparation s'arrête d'elle-même avant qu'une case n'ait plus assez de places pour ses bouteilles. Le nombre de places de chaque case suit sa taille (bouteilles de 8 cm de diamètre).
+- La recherche entoure chaque bouteille trouvée ; la liste regroupe les bouteilles identiques d'une même case (« × 6 »).
+
+### Modifié
+- Une case zoomée garde des bouteilles d'au moins 44 px à l'écran ; une très grande case est cadrée sur son coin en bas à droite.
+- Les bouteilles d'exemple sont régénérées au nouveau format. Les anciennes fiches de cases maçonnées sont converties automatiquement (une fiche par bouteille) ; ce qui ne tient pas dans la case reste dans la liste, marqué « à ranger ».
+
+### Retiré
+- Le bouton « Gérer ce casier » de la vue d'un casier : vider une case se fait depuis sa fiche ; vider une colonne, une rangée ou tout un casier se fait depuis *Rangement de la cave* → *Gérer*.
+
+### Technique
+- Le retrait d'une bouteille et la descente de celles du dessus sont enregistrés en une seule transaction (jamais à moitié).
+
 ## [0.3.4] - 2026-11-21
 
 ### Modifié

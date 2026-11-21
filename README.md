@@ -11,8 +11,10 @@ Application web installable (PWA) : pas d'App Store, pas de compte, gratuite. Le
 - **Vue d'ensemble** de la cave façon plan d'architecte, puis **casiers de face** (boutons en bas : murs gauche/droit, îlot gauche/droit).
 - **Fiche de bouteille** : nom, couleur, millésime, appellation, région, cépage, prix, note, « à boire jusqu'en », commentaire, photo de l'étiquette.
 - **Quatre types de rangement**, réglables casier par casier : cases maçonnées, casiers métalliques, alvéoles, caisses (voir « Rangement »).
-- **Plusieurs bouteilles par emplacement** (− / +) et **même vin à plusieurs endroits** (« J'ai la même ailleurs »).
-- **Gérer un casier** : vider une case, une colonne, une rangée ou tout le casier, avec **Annuler** pendant 10 secondes.
+- **Cases maçonnées en pile** : toucher une case la montre en grand avec son contenu (« 6 × Château Margaux 2015 »). Chaque bouteille a sa fiche et sa place : la pile part du coin en bas à droite, une bouteille ajoutée va en haut, une bouteille retirée fait descendre celles du dessus.
+- **Séparations réglables** : menu → *Rangement de la cave* → *Ajuster les séparations* ; on touche une séparation (verticale ou étagère) et on la fait glisser. Une séparation s'arrête d'elle-même avant qu'une case n'ait plus assez de places pour ses bouteilles.
+- **Plusieurs bouteilles par emplacement** (− / +) dans les autres rangements, et **même vin à plusieurs endroits** (« J'ai la même ailleurs »).
+- **Vider** une case (depuis sa fiche), une colonne, une rangée ou tout un casier (menu → *Rangement de la cave* → *Gérer*), avec **Annuler** pendant 10 secondes.
 - **À boire bientôt**, **filtre par couleur**, **mode d'emploi** au premier lancement.
 - **Recherche** par nom, année, appellation, région… ; les résultats s'entourent d'un anneau orange dans la cave.
 - **Suggestions de saisie** à partir des fiches existantes.
@@ -39,7 +41,7 @@ Chaque casier (mur gauche, îlot gauche, îlot droit, mur droit) a un **type de 
 
 | Type | Un emplacement = | Disposition | Quantité par défaut |
 |---|---|---|---|
-| Cases maçonnées | une case (≈ 60 × 38 cm) | empilées en quinconce | 12 |
+| Cases maçonnées | une case (≈ 60 × 38 cm, réglable) | une pile en quinconce, une fiche par bouteille (33 places pour 60 × 38 cm) | — |
 | Casier métallique | une place | une bouteille | 1 |
 | Alvéoles | un trou | jusqu'à 3 visibles | 1 |
 | Caisses | une caisse | 2 rangs de 3 | 6 |
@@ -95,7 +97,7 @@ Ajouter `?debug` à l'adresse expose `window.__cave` pour les tests dans le navi
 | `tests/` | Tests `node --test` |
 | `.claude/` | Agent de relecture de code et automatisations (voir plus bas) |
 
-Un emplacement s'identifie par `casier:colonne:rangée` (ex. `G:12:4`), colonnes comptées depuis l'entrée, rangées depuis le bas. Casiers : `G` mur gauche, `IG`/`ID` îlot gauche/droit, `D` mur droit.
+Un emplacement s'identifie par `casier:colonne:rangée` (ex. `G:12:4`), colonnes comptées depuis l'entrée, rangées depuis le bas. Casiers : `G` mur gauche, `IG`/`ID` îlot gauche/droit, `D` mur droit. Dans une case maçonnée, chaque bouteille a son identifiant stable `casier:colonne:rangée:suffixe` et un champ `pile` (son rang dans la pile, 0 = coin en bas à droite) ; les tailles réglées des colonnes et rangées sont dans le réglage (`colW`, `rowH`, en mètres).
 
 ## Déploiement
 

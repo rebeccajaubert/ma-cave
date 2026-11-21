@@ -920,7 +920,12 @@ function openSheet(title, html, tall = false) {
 function closeSheet() {
   scanToken++;
   const had = selected; $('sheet').hidden = true; $('sheetBody').innerHTML = ''; hideHero(); selRing.visible = false; selected = null;
-  if (had && view.mode === 'rack') { view.v = restV(racks[view.key]); clampView(); }
+  if (had && view.mode === 'rack') {
+    // Retour au cadrage du casier (après le zoom sur une case), en restant à hauteur de la case qu'on vient de quitter
+    const rack = racks[view.key];
+    if (rack.isCases) { view.d = Math.min(dFor(Math.min(rack.W, viewW(rack))), dMax(rack)); view.u = caseLocal(rack, had.c, had.r)[0]; }
+    view.v = restV(rack); clampView();
+  }
 }
 $('sheetClose').onclick = closeSheet;
 
@@ -1334,9 +1339,10 @@ function showMenu() {
   closeSheet();
   const total = Object.values(racks).reduce((s, r) => s + r.cols * r.rows, 0);
   const shown = allBottles().filter((b) => { const p = parseId(b.id); return inRack(p.k, p.c, p.r); });
+  const filled = new Set(shown.map((b) => caseIdOf(b.id))).size;   // une case maçonnée compte une fois, quel que soit le nombre de bouteilles
   openSheet(config.nom, `
     <div class="verline"><span>Version installée : <b>${esc(APP_VERSION)}</b></span><button class="btn" data-act="update-check">Mettre à jour</button></div>
-    <div class="stats"><div class="stat"><b>${totalBottles(shown)}</b><span>bouteilles</span></div><div class="stat"><b>${shown.length}</b><span>emplacements remplis</span></div><div class="stat"><b>${total - shown.length}</b><span>emplacements sans fiche</span></div></div>
+    <div class="stats"><div class="stat"><b>${totalBottles(shown)}</b><span>bouteilles</span></div><div class="stat"><b>${filled}</b><span>emplacements occupés</span></div><div class="stat"><b>${total - filled}</b><span>emplacements vides</span></div></div>
     <div class="btns">
       <button class="btn block" data-act="inventory">Liste de mes bouteilles</button>
       <button class="btn block" data-act="soon">À boire bientôt</button>
@@ -1580,7 +1586,7 @@ function showWelcome() {
   openSheet('Bienvenue dans Ma Cave', `
     <ol class="steps">
       <li><b>Choisissez un casier</b> : touchez-le sur la maquette, ou utilisez les boutons en bas de l'écran.</li>
-      <li><b>Touchez une bouteille</b> (ou un emplacement vide) pour voir sa fiche ou l'enregistrer.</li>
+      <li><b>Touchez une case</b> : elle s'affiche en grand avec ce qu'elle contient, et « Ajouter des bouteilles ». Touchez ensuite une bouteille pour voir sa fiche. Dans les casiers métalliques, touchez directement une place.</li>
       <li><b>Photographiez l'étiquette</b> : la fiche peut se remplir toute seule (menu, « Lecture des étiquettes »).</li>
       <li><b>Cherchez</b> une bouteille en haut de l'écran : elle s'entoure d'orange dans la cave.</li>
     </ol>
