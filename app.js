@@ -1,5 +1,5 @@
 import * as THREE from './vendor/three.module.min.js';
-import { esc, clamp, norm, RACK_ORDER, RACK_NAMES, slotId, parseId, isValidId, DEFAULT_CONFIG, STYLES, DEFAULT_STYLE, rackLimits, normalizeConfig, rackSizes, rackSize, meters, recordsIn, LEGACY_CONFIG, needsLegacyConfig, cellLayout, drinkSoon, qty, totalBottles, suggestions, findKnownWine, inheritableFields } from './lib.js';
+import { esc, clamp, norm, RACK_ORDER, RACK_NAMES, slotId, parseId, isValidId, DEFAULT_CONFIG, STYLES, DEFAULT_STYLE, rackLimits, normalizeConfig, rackSizes, rackSize, meters, recordsIn, isNewerVersion, LEGACY_CONFIG, needsLegacyConfig, cellLayout, drinkSoon, qty, totalBottles, suggestions, findKnownWine, inheritableFields } from './lib.js';
 import { openStore } from './db.js';
 import { getApiKey, setApiKey, clearApiKey, cleanApiKey, scanLabel, testApiKey, scanErrorMessage } from './scan.js';
 
@@ -18,7 +18,7 @@ const $ = (id) => document.getElementById(id);
 
 // Juste après une mise à jour, le navigateur peut associer une ancienne page (sans les nouveaux éléments)
 // au nouveau code : on recharge une fois pour tout reprendre à jour, au lieu d'afficher un écran vide.
-if (['scene', 'sheet', 'nav', 'dialog', 'undoBtn', 'rackBtn'].some((id) => !$(id))) {
+if (['scene', 'sheet', 'nav', 'dialog', 'undoBtn', 'rackBtn', 'updateBtn'].some((id) => !$(id))) {
   // Sans sessionStorage, on ne peut pas se souvenir de la tentative : on ne recharge pas (pas de boucle possible).
   let retried = true; try { retried = !!sessionStorage.getItem('cave-reload'); sessionStorage.setItem('cave-reload', '1'); } catch { retried = true; }
   if (!retried) location.reload();
@@ -26,6 +26,7 @@ if (['scene', 'sheet', 'nav', 'dialog', 'undoBtn', 'rackBtn'].some((id) => !$(id
 }
 try { sessionStorage.removeItem('cave-reload'); } catch { /* sans stockage */ }
 const APP_VERSION = self.APP_VERSION || '?';   // défini par version.js
+const APP_FILES = self.APP_FILES || [];         // idem : fichiers de l'app
 
 // ---------- Configuration (dimensions de la cave, gardées sur l'appareil) ----------
 const CONFIG_KEY = 'cave-config-v4';   // les anciennes clés (v3, v2) sont relues et converties par normalizeConfig
@@ -800,6 +801,7 @@ $('sheetBody').addEventListener('click', async (e) => {
   else if (act === 'scan-settings') showScanSettings();
   else if (act === 'clear-col' || act === 'clear-row' || act === 'clear-rack') await clearPart(act);
   else if (act === 'soon') showSoon();
+  else if (act === 'update-check') await checkForUpdate({ manual: true });
   else if (act === 'help') showWelcome();
   else if (act === 'welcome-ok') { try { localStorage.setItem('cave-bienvenue', '1'); } catch { /* sans stockage : réaffichée au prochain lancement */ } closeSheet(); }
   else if (act === 'inv-filter') showInventory(e.target.closest('[data-color]')?.dataset.color || '');
@@ -927,6 +929,7 @@ function showMenu() {
   const total = Object.values(racks).reduce((s, r) => s + r.cols * r.rows, 0);
   const shown = allBottles().filter((b) => { const p = parseId(b.id); return inRack(p.k, p.c, p.r); });
   openSheet(config.nom, `
+    <div class="verline"><span>Version installée : <b>${esc(APP_VERSION)}</b></span><button class="btn" data-act="update-check">Mettre à jour</button></div>
     <div class="stats"><div class="stat"><b>${totalBottles(shown)}</b><span>bouteilles</span></div><div class="stat"><b>${shown.length}</b><span>emplacements remplis</span></div><div class="stat"><b>${total - shown.length}</b><span>emplacements sans fiche</span></div></div>
     <div class="btns">
       <button class="btn block" data-act="inventory">Liste de mes bouteilles</button>
@@ -938,8 +941,7 @@ function showMenu() {
       <button class="btn block" data-act="install">Installer sur l'iPhone</button>
       <button class="btn block" data-act="help">Mode d'emploi</button>
       ${[...records.values()].some((b) => b.demo) ? '<button class="btn danger block" data-act="cleardemo">Test : retirer les bouteilles d\'exemple</button>' : '<button class="btn block" data-act="demo">Test : ajouter des bouteilles d\'exemple</button>'}
-    </div>
-    <p class="help version">Ma Cave · version ${esc(APP_VERSION)}</p>`, true);
+    </div>`, true);
 }
 /** Liste de toutes les fiches ; toucher une couleur filtre la liste. */
 function showInventory(filter = '') {
@@ -1088,6 +1090,49 @@ $('undoBtn').onclick = async () => {
   refresh(); if (selected) reselect(); saved('Annulé : bouteilles remises en place');
 };
 
+// ---------- Mises à jour de l'application ----------
+/** Version publiée sur le site, lue sans aucun cache ; null sans réseau. */
+async function latestVersion() {
+  try {
+    const res = await fetch(`version.js?v=${Date.now()}`, { cache: 'no-store' });
+    return res.ok ? (/APP_VERSION\s*=\s*'([^']+)'/.exec(await res.text())?.[1] || null) : null;
+  } catch { return null; }
+}
+/**
+ * Compare la version installée à celle du site. Au démarrage, affiche un bandeau si une nouvelle version existe ;
+ * depuis le menu (`manual`), propose directement de mettre à jour.
+ */
+async function checkForUpdate({ manual = false } = {}) {
+  if (manual) toast('Recherche d\'une mise à jour…');
+  const latest = await latestVersion();
+  if (!latest) { if (manual) toast('Pas de réseau : impossible de vérifier les mises à jour'); return; }
+  if (!isNewerVersion(latest, APP_VERSION)) { if (manual) toast(`Vous avez la dernière version (${APP_VERSION})`); return; }
+  if (manual) {
+    if (await ask(`Une nouvelle version (${latest}) est disponible. La télécharger maintenant ? Vos bouteilles et réglages sont conservés.`, 'Mettre à jour')) forceUpdate(latest);
+    return;
+  }
+  $('updateText').textContent = `Nouvelle version ${latest} disponible`;
+  $('updateBar').hidden = false;
+  $('updateBtn').onclick = () => forceUpdate(latest);
+}
+/**
+ * Mise à jour forcée : retélécharge chaque fichier depuis le site (sans cache) ; seulement si TOUS sont arrivés,
+ * efface les copies hors-ligne, désinscrit le service worker puis recharge. Sinon on ne touche à rien :
+ * l'app reste utilisable hors-ligne. Les fiches (IndexedDB) et les réglages (localStorage) ne sont jamais touchés.
+ * @param {string} expected version attendue après la mise à jour (pour confirmer qu'elle a bien pris)
+ */
+async function forceUpdate(expected) {
+  $('updateBar').hidden = true; toast('Mise à jour en cours…');
+  const results = await Promise.all(APP_FILES.map((f) => fetch(f, { cache: 'reload' }).then((r) => r.ok).catch(() => false)));
+  if (results.includes(false)) return toast('Mise à jour impossible : vérifiez la connexion et réessayez');
+  try {
+    if ('caches' in self) for (const k of await caches.keys()) await caches.delete(k);
+    for (const reg of (await navigator.serviceWorker?.getRegistrations?.()) || []) await reg.unregister();
+    sessionStorage.setItem('cave-maj-attendue', expected || '');
+  } catch (e) { console.error(e); }
+  location.replace(`./?maj=${Date.now()}`);   // adresse neuve : la page elle-même est rechargée depuis le site
+}
+
 // ---------- Aides à la prise en main ----------
 /** Mode d'emploi en 4 étapes, affiché au premier lancement et depuis le menu. */
 function showWelcome() {
@@ -1202,5 +1247,11 @@ if (new URLSearchParams(location.search).has('debug')) window.__cave = { tapSlot
   let welcomed = false; try { welcomed = !!localStorage.getItem('cave-bienvenue'); } catch { /* stockage bloqué */ }
   if (!welcomed) showWelcome();
   navigator.storage?.persist?.().catch(() => {});
+  if (location.search.includes('maj=')) {   // retour d'une mise à jour forcée : on dit si elle a bien pris
+    history.replaceState(null, '', './');
+    let expected = ''; try { expected = sessionStorage.getItem('cave-maj-attendue') || ''; sessionStorage.removeItem('cave-maj-attendue'); } catch { /* sans stockage */ }
+    toast(isNewerVersion(expected, APP_VERSION) ? 'La mise à jour n\'a pas abouti : réessayez avec du réseau' : `Application à jour (version ${APP_VERSION})`);
+  }
+  if (!['localhost', '127.0.0.1'].includes(location.hostname)) checkForUpdate();
   if ('serviceWorker' in navigator && !['localhost', '127.0.0.1'].includes(location.hostname)) navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {});
 })();

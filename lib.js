@@ -207,3 +207,14 @@ export function inheritableFields(known, millesime = '') {
   if (year && String(known.millesime ?? '').trim() === year) for (const k of ['apogee', 'prix']) if (known[k]) out[k] = known[k];
   return out;
 }
+
+// ---------- Versions ----------
+
+/** Vrai si la version `a` (« 0.3.10 ») est plus récente que `b` (« 0.3.9 »). Une version illisible n'est jamais plus récente. */
+export function isNewerVersion(a, b) {
+  const p = (v) => (/^\d+\.\d+\.\d+$/.test(String(v ?? '')) ? String(v).split('.').map(Number) : null);
+  const x = p(a), y = p(b);
+  if (!x || !y) return false;
+  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i];
+  return false;
+}

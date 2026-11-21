@@ -27,7 +27,11 @@ Un emplacement est soit *enregistré* (une fiche existe : la bouteille apparaît
 2. Toucher **Partager** → **Sur l'écran d'accueil** → **Ajouter**.
 3. Lancer **Ma Cave** depuis l'icône (toujours depuis l'icône, pas depuis Safari : ce sont deux espaces de stockage distincts).
 
-L'application se met à jour toute seule quand une nouvelle version est publiée (visible à la deuxième ouverture avec du réseau). Les fiches ne sont pas touchées par une mise à jour.
+### Mettre à jour
+
+La version installée est affichée **en haut du menu** (bouton ☰ en haut à droite), avec un bouton **« Mettre à jour »**. Au lancement, un bandeau vert annonce aussi toute nouvelle version publiée. La mise à jour retélécharge l'application depuis le site ; les bouteilles, les réglages et la clé de lecture sont conservés.
+
+Les toutes premières versions (avant 0.3.1) n'ont pas ce bouton et peuvent rester bloquées sur iPhone : supprimer l'icône puis réinstaller depuis Safari (attention, cela efface les fiches de cet appareil).
 
 ## Rangement
 

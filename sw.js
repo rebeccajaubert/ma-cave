@@ -2,7 +2,7 @@
 // Le nom du cache suit le numéro de version : une nouvelle version = un nouveau cache.
 importScripts('version.js');
 const CACHE = `ma-cave-${self.APP_VERSION}`;
-const FILES = ['./', 'index.html', 'style.css', 'app.js', 'lib.js', 'db.js', 'scan.js', 'version.js', 'vendor/three.module.min.js', 'manifest.webmanifest', 'icons/icon-180.png', 'icons/icon-512.png'];
+const FILES = self.APP_FILES;   // liste définie dans version.js
 
 // cache: 'reload' : on télécharge toujours la dernière version du serveur, jamais la copie gardée par le navigateur
 // (GitHub Pages autorise 10 minutes de cache : sans cela, le nouveau cache pourrait recevoir d'anciens fichiers).
@@ -22,16 +22,17 @@ self.addEventListener('activate', (e) => {
 const NETWORK_TIMEOUT = 4000;
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET' || new URL(e.request.url).origin !== location.origin) return;
+  const network = fetch(e.request, { cache: 'no-cache' });
+  // Mise à jour du cache déclarée tout de suite (Safari refuse waitUntil appelé plus tard, après un await).
+  // Les requêtes avec paramètres (ex. version.js?v=… pour vérifier les mises à jour) ne sont pas gardées : le cache ne grossit pas.
+  const keep = !new URL(e.request.url).search;
+  e.waitUntil(network.then((res) => keep && res.ok && caches.open(CACHE).then((c) => c.put(e.request, res.clone()))).catch(() => {}));
   e.respondWith((async () => {
-    const cache = await caches.open(CACHE);
-    const cached = () => cache.match(e.request, { ignoreSearch: true });
+    const cached = async () => (await caches.open(CACHE)).match(e.request, { ignoreSearch: true });
     let timer;
     try {
-      const res = await Promise.race([
-        fetch(e.request, { cache: 'no-cache' }),
-        new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('délai')), NETWORK_TIMEOUT); }),
-      ]);
-      if (res.ok) { e.waitUntil(cache.put(e.request, res.clone())); return res; }   // waitUntil : iOS n'interrompt pas l'écriture
+      const res = await Promise.race([network, new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('délai')), NETWORK_TIMEOUT); })]);
+      if (res.ok) return res;
       return (await cached()) || res;   // erreur du serveur (ex. 503 de GitHub Pages) : la copie en cache vaut mieux
     } catch {
       return (await cached()) || Response.error();

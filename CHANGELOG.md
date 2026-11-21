@@ -3,6 +3,15 @@
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), versionnement [sémantique](https://semver.org/lang/fr/) :
 `MAJEUR.MINEUR.CORRECTIF`. Le numéro de version est défini dans `version.js` (voir README, « Publier une version »).
 
+## [0.3.1] - 2026-11-21
+
+### Ajouté
+- **Version installée affichée en haut du menu**, avec un bouton **« Mettre à jour »** qui vérifie le site et, si une nouvelle version existe, la télécharge vraiment (sans toucher aux bouteilles ni aux réglages).
+- **Bandeau « Nouvelle version disponible »** au lancement quand une mise à jour est publiée.
+
+### Corrigé
+- Mise à jour hors-ligne : la mise en cache des fichiers ne dépend plus d'un appel refusé par Safari.
+
 ## [0.3.0] - 2026-11-17
 
 ### Ajouté

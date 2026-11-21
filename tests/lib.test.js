@@ -1,7 +1,7 @@
 // Tests des fonctions pures (lib.js) : `npm test`
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { esc, norm, clamp, slotId, parseId, isValidId, normalizeConfig, DEFAULT_CONFIG, STYLES, rackLimits, recordsIn, drinkSoon, rackSize, meters, LEGACY_CONFIG, needsLegacyConfig, cellLayout, qty, totalBottles, suggestions, findKnownWine, inheritableFields } from '../lib.js';
+import { esc, norm, clamp, slotId, parseId, isValidId, normalizeConfig, DEFAULT_CONFIG, STYLES, rackLimits, recordsIn, drinkSoon, rackSize, meters, isNewerVersion, LEGACY_CONFIG, needsLegacyConfig, cellLayout, qty, totalBottles, suggestions, findKnownWine, inheritableFields } from '../lib.js';
 
 test('esc neutralise le HTML', () => {
   assert.equal(esc('<img src=x onerror="a()">'), '&lt;img src=x onerror=&quot;a()&quot;&gt;');
@@ -134,4 +134,14 @@ test('rackSize / meters : chaque casier a sa propre taille', () => {
   assert.deepEqual(rackSize('inconnu', 'x', null), { length: 0, height: 0 });
   assert.equal(meters(5.4), '5,4 m');
   assert.equal(meters(1.84), '1,8 m');
+});
+
+test('isNewerVersion : compare numériquement, ignore ce qui est illisible', () => {
+  assert.equal(isNewerVersion('0.3.1', '0.3.0'), true);
+  assert.equal(isNewerVersion('0.3.10', '0.3.9'), true);   // pas un tri alphabétique
+  assert.equal(isNewerVersion('1.0.0', '0.9.9'), true);
+  assert.equal(isNewerVersion('0.3.0', '0.3.0'), false);
+  assert.equal(isNewerVersion('0.2.9', '0.3.0'), false);
+  assert.equal(isNewerVersion('?', '0.3.0'), false);
+  assert.equal(isNewerVersion(null, '0.3.0'), false);
 });

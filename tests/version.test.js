@@ -14,9 +14,12 @@ test('version cohérente entre version.js, package.json et CHANGELOG.md', () => 
   assert.equal(fromLog, fromJs, 'dernière entrée de CHANGELOG.md différente de version.js');
 });
 
-test('le service worker met en cache tous les fichiers de l\'application', () => {
-  const sw = read('sw.js');
+test('la liste des fichiers (version.js) contient toute l\'application et ils existent', () => {
+  const list = /APP_FILES\s*=\s*\[([^\]]+)\]/.exec(read('version.js'))?.[1] ?? '';
+  const files = [...list.matchAll(/'([^']+)'/g)].map((m) => m[1]);
   for (const f of ['index.html', 'style.css', 'app.js', 'lib.js', 'db.js', 'scan.js', 'version.js', 'vendor/three.module.min.js', 'manifest.webmanifest']) {
-    assert.ok(sw.includes(`'${f}'`), `${f} manque dans la liste du service worker`);
+    assert.ok(files.includes(f), `${f} manque dans APP_FILES (version.js)`);
   }
+  for (const f of files.filter((x) => x !== './')) assert.doesNotThrow(() => read(f), `${f} est listé mais n'existe pas`);
+  assert.match(read('sw.js'), /FILES = self\.APP_FILES/, 'le service worker doit utiliser APP_FILES');
 });
