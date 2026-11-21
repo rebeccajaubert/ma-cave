@@ -81,7 +81,7 @@ export const DEFAULT_CONFIG = {
  * Accepte les anciens formats : v1 ({ racks } sans type), v3 ({ cols, rowsMur, rowsIlot }).
  */
 export function normalizeConfig(c) {
-  const out = structuredClone(DEFAULT_CONFIG);
+  const out = JSON.parse(JSON.stringify(DEFAULT_CONFIG));   // copie profonde (structuredClone n'existe pas avant iOS 15.4)
   if (!c || typeof c !== 'object') return out;
   if (c.nom && c.nom !== 'La Cave de Papa') out.nom = String(c.nom).slice(0, 40);
   const src = {};
@@ -324,14 +324,16 @@ export function normalizePile(list, caseId) {
 /**
  * Range en haut de la pile les bouteilles d'une ancienne fiche « à ranger », autant que la case le permet.
  * À écrire dans UNE transaction : les nouvelles fiches, et l'ancienne réduite (s'il en reste) ou supprimée.
+ * @param {object[]} list toutes les fiches (pour connaître la pile actuelle de la case)
  * @param {object} lost ancienne fiche `K:c:r` avec une quantité
  * @param {number} capacity nombre de places de la case
+ * @param {() => number} [rand] tirage aléatoire du suffixe des identifiants (injectable pour les tests)
  * @returns {{ put: object[], remove: string[] }} vide si la case est pleine
  */
 export function placeLost(list, lost, capacity, rand = Math.random) {
   const pile = pileOf(list, lost.id), q = qty(lost), n = Math.min(q, Math.max(0, capacity - pile.length));
   if (!n) return { put: [], remove: [] };
-  const { quantite, aRanger, ...wine } = lost, base = newBottleId(lost.id, rand), now = Date.now();
+  const { quantite, aRanger, vide, demo, pile: _p, ...wine } = lost, base = newBottleId(lost.id, rand), now = Date.now();
   const put = Array.from({ length: n }, (_, i) => ({ ...wine, id: base + i.toString(36), pile: pile.length + i, ajout: now }));
   return n < q ? { put: [...put, { ...lost, quantite: q - n }], remove: [] } : { put, remove: [lost.id] };
 }
@@ -399,7 +401,8 @@ export function rackGrid(rackCfg) {
   const rowH = Array.from({ length: rackCfg.rows }, (_, i) => rackCfg.rowH?.[i] ?? st.h);
   const cum = (a) => a.reduce((acc, v, i) => (acc.push(i ? acc[i - 1] + a[i - 1] : 0), acc), []);
   const colX = cum(colW), rowY = cum(rowH);
-  return { colW, rowH, colX, rowY, W: colX.at(-1) + colW.at(-1), H: rowY.at(-1) + rowH.at(-1) };
+  const n = colW.length - 1, m = rowH.length - 1;   // (pas de .at(-1) : absent avant iOS 15.4)
+  return { colW, rowH, colX, rowY, W: colX[n] + colW[n], H: rowY[m] + rowH[m] };
 }
 
 /**

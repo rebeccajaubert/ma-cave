@@ -775,7 +775,9 @@ function pick(cx, cy) {
     const l = rack.group.worldToLocal(tmpV.copy(h.point));
     // Colonne et rangée touchées (tailles éventuellement inégales), mesurées depuis l'entrée et depuis le bas
     const fromEntry = rack.flip ? rack.W / 2 - l.x : l.x + rack.W / 2, { colX, rowY } = rack.grid;
-    const c = clamp(colX.findLastIndex((x) => x <= fromEntry), 0, rack.cols - 1), r = clamp(rowY.findLastIndex((y) => y <= l.y - BASE), 0, rack.rows - 1);
+    // Dernier bord à gauche du doigt / sous le doigt (sans findLastIndex : absent avant iOS 15.4)
+    const lastAtMost = (edges, v) => { let i = 0; while (i + 1 < edges.length && edges[i + 1] <= v) i++; return i; };
+    const c = clamp(lastAtMost(colX, fromEntry), 0, rack.cols - 1), r = clamp(lastAtMost(rowY, l.y - BASE), 0, rack.rows - 1);
     const hit = { type: 'slot', key: rack.key, c, r };
     if (rack.isCases) {   // la bouteille la plus proche du doigt dans cette case, s'il y en a une sous le doigt
       let best = null, bd = BOTTLE_D / 2;

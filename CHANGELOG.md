@@ -11,6 +11,7 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), ver
 - Une bouteille de case dans un casier passé à un autre type de rangement s'ouvre depuis la liste ou la recherche, et peut être déplacée ou retirée.
 - Une ancienne fiche hors des dimensions actuelles n'est plus marquée « à ranger » ni réécrite à chaque lancement.
 - Restauration d'une sauvegarde : le rang dans la pile est toujours lu comme un nombre.
+- Compatibilité avec les iPhone en iOS 15.0 à 15.3 (fonctions récentes remplacées).
 
 ## [0.4.0] - 2026-11-21
 
