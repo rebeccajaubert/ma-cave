@@ -5,6 +5,9 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), ver
 
 ## [0.3.3] - 2026-11-21
 
+### Corrigé
+- Vue d'un casier : la phrase d'aide et le bouton « Gérer ce casier » ne recouvrent plus les bouteilles du bas ; la maquette est recentrée dans la partie libre de l'écran.
+
 ### Modifié
 - Les bouteilles d'exemple sont toujours au format de la cave de Verdelot (cases maçonnées à gauche, casiers métalliques à droite). Un appareil de test resté sur l'ancien rangement en alvéoles avec seulement des exemples est remis au format Verdelot automatiquement, avec des exemples régénérés. Dès qu'une vraie fiche existe, rien n'est modifié.
 

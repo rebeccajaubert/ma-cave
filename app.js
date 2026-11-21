@@ -333,7 +333,26 @@ const goalPos = new THREE.Vector3(), goalTgt = new THREE.Vector3();
 const tanH = () => TAN_V * aspect;
 const fitDist = () => (Math.hypot(R, L / 2) + 0.4) / (TAN_V * Math.min(1, aspect)) * (aspect > 1 ? 1.25 : 0.8);
 const dFor = (width) => (width + 0.35) / 2 / tanH();                       // distance pour voir `width` mètres de casier
-const dMax = (rack) => Math.max(dFor(rack.W), (rack.H + 0.9) / 2 / TAN_V);   // tout le casier
+// Partie de l'écran réellement libre pour la maquette : sous la barre de recherche, au-dessus de l'aide,
+// du bouton « Gérer ce casier » et de la barre du bas (mesurée sur la page, donc juste sur tous les iPhone).
+let freeArea = { top: 0, bottom: 0 };
+function measureFreeArea() {
+  const h = window.innerHeight, top = $('topbar').getBoundingClientRect().bottom + 8;
+  // (offsetParent est toujours nul pour un élément « fixed » : on teste la présence à l'écran avec getClientRects)
+  const lows = ['nav', 'hint', 'rackBtn'].map((id) => $(id)).filter((el) => el && !el.hidden && el.getClientRects().length && el.textContent.trim())
+    .map((el) => el.getBoundingClientRect().top).filter((y) => y > h / 2);
+  freeArea = { top, bottom: h - (lows.length ? Math.min(...lows) - 8 : h) };
+}
+/** Part de la hauteur de l'écran où la maquette est visible (le reste est couvert par les boutons). */
+const usableRatio = () => clamp((window.innerHeight - freeArea.top - freeArea.bottom) / window.innerHeight, 0.4, 1);
+/** En vue casier, recentre l'image dans la partie libre de l'écran, pour que rien ne soit caché sous les boutons. */
+function applyViewOffset() {
+  measureFreeArea();
+  const w = window.innerWidth, h = window.innerHeight, shift = view.mode === 'rack' ? (freeArea.bottom - freeArea.top) / 2 : 0;
+  if (shift) camera.setViewOffset(w, h, 0, shift, w, h); else camera.clearViewOffset();
+}
+window.addEventListener('resize', () => { applyViewOffset(); clampView(); });   // rotation : la partie libre change
+const dMax = (rack) => Math.max(dFor(rack.W), (rack.H + 0.5) / 2 / TAN_V / usableRatio());   // tout le casier, dans la partie libre
 const dMin = (rack) => dFor(Math.max(0.25, 1.3 * rack.cw));                  // zoom maximal : une place de casier métallique fait ≈ 55 px
 // Largeur montrée à l'ouverture d'un casier : assez d'emplacements pour se repérer, assez grands pour être touchés du doigt.
 const viewW = (rack) => clamp(6 * rack.cw, 0.54, 1.4);
@@ -362,15 +381,22 @@ function applyVisibility() {
   for (const key of RACK_ORDER) racks[key].group.visible = ov || key === k;
   document.querySelectorAll('#nav button').forEach((b) => b.classList.toggle('on', b.dataset.view === (ov ? 'overview' : k)));
   $('rackBtn').hidden = ov;
+  document.body.classList.toggle('rack-mode', !ov);
   $('hint').textContent = ov ? 'Touchez un casier pour l\'ouvrir · glissez pour tourner la maquette'
-    : 'Touchez une bouteille · glissez pour faire défiler le casier';
+    : 'Touchez une bouteille · glissez pour faire défiler';
+  applyViewOffset();
 }
 function showOverview() { view.mode = 'overview'; view.key = null; applyVisibility(); }
+// Hauteur de visée au repos : casier centré dans la partie libre ; s'il est plus haut qu'elle (casiers métalliques,
+// zoomés pour le doigt), on montre le bas (rangée 1) juste au-dessus des boutons : le haut se découvre en glissant.
+const restV = (rack) => Math.min(BASE + rack.H / 2 + 0.1, BASE - 0.02 + view.d * TAN_V * usableRatio());
 function showRack(key) {
   const rack = racks[key];
   view.mode = 'rack'; view.key = key;
-  view.d = Math.min(dFor(Math.min(rack.W, viewW(rack))), dMax(rack)); view.u = 0; view.v = BASE + rack.H / 2 + 0.1;
-  clampView(); applyVisibility();
+  applyVisibility();   // d'abord : affiche les boutons de la vue casier, puis mesure la partie libre de l'écran
+  view.d = Math.min(dFor(Math.min(rack.W, viewW(rack))), dMax(rack)); view.u = 0;
+  view.v = restV(rack);
+  clampView();
 }
 function focusSlot(key, c, r) {
   const rack = racks[key], [lx, ly] = slotLocal(rack, c, r);
@@ -580,7 +606,7 @@ function openSheet(title, html, tall = false) {
 function closeSheet() {
   scanToken++;
   const had = selected; $('sheet').hidden = true; $('sheetBody').innerHTML = ''; hideHero(); selRing.visible = false; selected = null;
-  if (had && view.mode === 'rack') { view.v = BASE + racks[view.key].H / 2 + 0.1; clampView(); }
+  if (had && view.mode === 'rack') { view.v = restV(racks[view.key]); clampView(); }
 }
 $('sheetClose').onclick = closeSheet;
 

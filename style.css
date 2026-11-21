@@ -159,3 +159,10 @@ body.undo-on #sheetBody { padding-bottom: calc(var(--sab) + 96px); }
   background: #e6f4ea; color: #154a26; border: 2px solid #2e7d47; border-radius: 16px; padding: 10px 10px 10px 14px; font-size: 16px; font-weight: 600; }
 #updateBar span { flex: 1; }
 #updateBtn { background: #2e7d47; color: #fff; border-radius: 12px; padding: 12px 14px; min-height: 48px; font-weight: 700; }
+
+/* Vue d'un casier : l'aide à gauche et « Gérer ce casier » à droite, sur une même ligne au-dessus de la barre du bas.
+   La maquette est recentrée au-dessus de cette ligne (applyViewOffset) ; l'aide a un fond sombre pour rester lisible
+   quand le casier défile dessous. */
+body.rack-mode #hint { right: 186px; text-align: left; font-size: 14px; bottom: calc(var(--sab) + 92px);
+  background: rgba(10, 28, 54, .88); border-radius: 14px; padding: 6px 10px; }
+body.rack-mode #rackBtn { bottom: calc(var(--sab) + 92px); }
