@@ -88,7 +88,7 @@ Ajouter `?debug` à l'adresse expose `window.__cave` pour les tests dans le navi
 |---|---|
 | `index.html`, `style.css` | Page, interface (conçue pour un public peu à l'aise avec le numérique : gros boutons, textes clairs) |
 | `app.js` | Scène 3D (Three.js), interactions, fiches, menu |
-| `lib.js` | Fonctions pures (échappement HTML, identifiants d'emplacements, dimensions, quantités, suggestions) |
+| `lib.js` | Fonctions pures (échappement HTML, identifiants, dimensions, quantités, suggestions ; pile des cases maçonnées, places en quinconce, séparations) |
 | `db.js` | Stockage local IndexedDB |
 | `scan.js` | Lecture d'étiquette via Gemini (clé, requête, validation de la réponse) |
 | `version.js` | Numéro de version, source unique |

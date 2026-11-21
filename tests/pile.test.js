@@ -96,3 +96,17 @@ test('pile : annuler un retrait puis « Vider cette case »', () => {
   const back = pileOf(apply(second.work, undoRemoval(second.work, removed)), 'G:0:0').map((x) => [x.id, x.pile]);
   assert.deepEqual(back, [['G:0:0:a', 0], ['G:0:0:b', 1], ['G:0:0:c', 2], ['G:0:0:d', 3]]);
 });
+
+test('pile : retirer une ancienne fiche (« à ranger ») ne touche pas aux rangs de la pile', () => {
+  const list = [b('G:0:0:a', 0), b('G:0:0:b', 1), { id: 'G:0:0', nom: 'Vieux', quantite: 2, aRanger: true }];
+  assert.deepEqual(removeFromPile(list, 'G:0:0'), { put: [], remove: ['G:0:0'] });
+});
+
+test('pile : migration — case inexistante ignorée, fiche déjà « à ranger » non réécrite', () => {
+  const isCases = (k) => k === 'G';
+  const gone = { id: 'G:9:9', nom: 'Hors dimensions', quantite: 3 };
+  assert.deepEqual(migrateCaseRecords([gone], isCases, () => 0), { put: [], remove: [] });
+  const waiting = { id: 'G:0:0', nom: 'Attend', quantite: 2, aRanger: true };
+  const full = Array.from({ length: 3 }, (_, i) => b(`G:0:0:p${i}`, i));
+  assert.deepEqual(migrateCaseRecords([...full, waiting], isCases, () => 3), { put: [], remove: [] });
+});

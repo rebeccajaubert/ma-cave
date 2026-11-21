@@ -3,6 +3,15 @@
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), versionnement [sémantique](https://semver.org/lang/fr/) :
 `MAJEUR.MINEUR.CORRECTIF`. Le numéro de version est défini dans `version.js` (voir README, « Publier une version »).
 
+## [0.4.1] - 2026-11-21
+
+### Corrigé
+- Fiches « à ranger » (anciennes bouteilles qui n'avaient pas trouvé de place dans leur case) : la fiche de la case propose de **les ranger** (s'il y a de la place) ou de **les retirer** ; « Vider cette case » les retire aussi. Elles ne reviennent plus toutes seules après un vidage.
+- Une case qui a plus de bouteilles que de places (après un « Annuler ») le signale, et la bouteille en trop reste accessible (« Voir la bouteille en trop ») pour la déplacer ou la retirer.
+- Une bouteille de case dans un casier passé à un autre type de rangement s'ouvre depuis la liste ou la recherche, et peut être déplacée ou retirée.
+- Une ancienne fiche hors des dimensions actuelles n'est plus marquée « à ranger » ni réécrite à chaque lancement.
+- Restauration d'une sauvegarde : le rang dans la pile est toujours lu comme un nombre.
+
 ## [0.4.0] - 2026-11-21
 
 ### Ajouté

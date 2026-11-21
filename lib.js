@@ -293,6 +293,7 @@ export function pushToPile(list, caseId, n, capacity) {
  */
 export function removeFromPile(list, id) {
   const gone = list.find((b) => b.id === id); if (!gone) return { put: [], remove: [] };
+  if (!parseId(id).u) return { put: [], remove: [id] };   // ancienne fiche (« à ranger ») : elle n'est pas dans la pile
   const pile = pileOf(list, caseIdOf(id)), at = pile.findIndex((b) => b.id === id);
   return { put: pile.slice(at + 1).map((b, i) => ({ ...b, pile: at + i })), remove: [id] };
 }
@@ -331,7 +332,10 @@ export function migrateCaseRecords(list, isCasesRack, capacityOf, rand = Math.ra
   const put = [], remove = [], work = [...list];
   for (const old of list) {
     if (!old || old.vide || parseId(old.id).u || !isCasesRack(parseId(old.id).k)) continue;
-    const caseId = old.id, q = qty(old), free = Math.max(0, capacityOf(caseId) - pileOf(work, caseId).length), n = Math.min(q, free);
+    const caseId = old.id, cap = capacityOf(caseId);
+    if (!cap) continue;   // la case n'existe plus (dimensions réduites) : la fiche reste telle quelle, conservée
+    const q = qty(old), free = Math.max(0, cap - pileOf(work, caseId).length), n = Math.min(q, free);
+    if (!n && old.aRanger) continue;   // toujours pas de place : rien à réécrire
     const { quantite, aRanger, ...wine } = old;
     for (let i = 0; i < n; i++) {
       const b = { ...wine, id: newBottleId(caseId, rand) + i.toString(36), pile: pileOf(work, caseId).length };
