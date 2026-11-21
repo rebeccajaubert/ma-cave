@@ -322,6 +322,21 @@ export function normalizePile(list, caseId) {
 }
 
 /**
+ * Range en haut de la pile les bouteilles d'une ancienne fiche « à ranger », autant que la case le permet.
+ * À écrire dans UNE transaction : les nouvelles fiches, et l'ancienne réduite (s'il en reste) ou supprimée.
+ * @param {object} lost ancienne fiche `K:c:r` avec une quantité
+ * @param {number} capacity nombre de places de la case
+ * @returns {{ put: object[], remove: string[] }} vide si la case est pleine
+ */
+export function placeLost(list, lost, capacity, rand = Math.random) {
+  const pile = pileOf(list, lost.id), q = qty(lost), n = Math.min(q, Math.max(0, capacity - pile.length));
+  if (!n) return { put: [], remove: [] };
+  const { quantite, aRanger, ...wine } = lost, base = newBottleId(lost.id, rand), now = Date.now();
+  const put = Array.from({ length: n }, (_, i) => ({ ...wine, id: base + i.toString(36), pile: pile.length + i, ajout: now }));
+  return n < q ? { put: [...put, { ...lost, quantite: q - n }], remove: [] } : { put, remove: [lost.id] };
+}
+
+/**
  * Convertit les anciennes fiches de cases maçonnées (`K:c:r` avec une quantité) en une fiche par bouteille,
  * empilées dans leur case. Les bouteilles qui ne tiennent pas restent dans l'ancienne fiche, marquée `aRanger`.
  * @param {(k: string) => boolean} isCasesRack ce casier est-il en cases maçonnées ?

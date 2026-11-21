@@ -1,7 +1,7 @@
 // Tests de la pile des cases maçonnées : identifiants, ajout en haut, tassement au retrait, annulation, migration.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isValidId, parseId, caseIdOf, newBottleId, pileOf, pushToPile, removeFromPile, undoRemoval, normalizePile, migrateCaseRecords } from '../lib.js';
+import { isValidId, parseId, caseIdOf, newBottleId, pileOf, pushToPile, removeFromPile, undoRemoval, normalizePile, migrateCaseRecords, placeLost } from '../lib.js';
 
 const b = (id, pile, extra = {}) => ({ id, pile, nom: id, ajout: 1, ...extra });
 
@@ -109,4 +109,16 @@ test('pile : migration — case inexistante ignorée, fiche déjà « à ranger 
   const waiting = { id: 'G:0:0', nom: 'Attend', quantite: 2, aRanger: true };
   const full = Array.from({ length: 3 }, (_, i) => b(`G:0:0:p${i}`, i));
   assert.deepEqual(migrateCaseRecords([...full, waiting], isCases, () => 3), { put: [], remove: [] });
+});
+
+test('pile : ranger une fiche « à ranger » en haut de la pile, le reste attend', () => {
+  const list = [b('G:0:0:a', 0), b('G:0:0:b', 1)], lost = { id: 'G:0:0', nom: 'Vieux', quantite: 5, aRanger: true };
+  let r = placeLost([...list, lost], lost, 4, () => 0.5);   // 2 places libres sur 4
+  assert.deepEqual(r.put.filter((x) => x.id !== 'G:0:0').map((x) => [x.pile, x.nom]), [[2, 'Vieux'], [3, 'Vieux']]);
+  assert.deepEqual(r.put.find((x) => x.id === 'G:0:0'), { ...lost, quantite: 3 });
+  assert.deepEqual(r.remove, []);
+  r = placeLost([...list, lost], lost, 33);                  // tout tient : l'ancienne fiche disparaît
+  assert.equal(r.put.length, 5); assert.deepEqual(r.remove, ['G:0:0']);
+  assert.ok(r.put.every((x) => x.quantite === undefined && x.aRanger === undefined));
+  assert.deepEqual(placeLost([...list, lost], lost, 2), { put: [], remove: [] });   // case pleine
 });

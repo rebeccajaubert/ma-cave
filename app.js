@@ -1,5 +1,5 @@
 import * as THREE from './vendor/three.module.min.js';
-import { esc, clamp, norm, RACK_ORDER, RACK_NAMES, slotId, parseId, isValidId, DEFAULT_CONFIG, CONFIG_REV, STYLES, rackGrid, casePlaces, pileOf, BOTTLE_D, moveSeparator, caseIdOf, newBottleId, pushToPile, removeFromPile, undoRemoval, normalizePile, migrateCaseRecords, DEFAULT_STYLE, rackLimits, normalizeConfig, rackSizes, rackSize, meters, recordsIn, isNewerVersion, LEGACY_CONFIG, needsLegacyConfig, realRecordCount, shouldResetDemoToVerdelot, cellLayout, drinkSoon, qty, totalBottles, suggestions, findKnownWine, inheritableFields } from './lib.js';
+import { esc, clamp, norm, RACK_ORDER, RACK_NAMES, slotId, parseId, isValidId, DEFAULT_CONFIG, CONFIG_REV, STYLES, rackGrid, casePlaces, pileOf, BOTTLE_D, moveSeparator, caseIdOf, newBottleId, pushToPile, removeFromPile, undoRemoval, normalizePile, migrateCaseRecords, placeLost, DEFAULT_STYLE, rackLimits, normalizeConfig, rackSizes, rackSize, meters, recordsIn, isNewerVersion, LEGACY_CONFIG, needsLegacyConfig, realRecordCount, shouldResetDemoToVerdelot, cellLayout, drinkSoon, qty, totalBottles, suggestions, findKnownWine, inheritableFields } from './lib.js';
 import { openStore } from './db.js';
 import { getApiKey, setApiKey, clearApiKey, cleanApiKey, scanLabel, testApiKey, scanErrorMessage } from './scan.js';
 
@@ -1169,23 +1169,21 @@ $('sheetBody').addEventListener('click', async (e) => {
   }
   else if (act === 'lost-place') {   // ranger dans la pile les bouteilles d'une ancienne fiche, s'il y a de la place
     const caseId = selected?.caseId, lost = caseId && bottleAt(caseId); if (!lost) return;
-    const pile = pileOf(allBottles(), caseId), free = capacityOf(caseId) - pile.length, q = qty(lost), n = Math.min(Math.max(0, free), q);
-    if (!n) return toast('Cette case est pleine : retirez ou déplacez d\'abord des bouteilles');
-    const now = Date.now(), base = newBottleId(caseId);
-    const recs = Array.from({ length: n }, (_, i) => ({ ...wineOf(lost), id: base + i.toString(36), pile: pile.length + i, ajout: now }));
+    const { put, remove } = placeLost(allBottles(), lost, capacityOf(caseId));
+    if (!put.length) return toast('Cette case est pleine : retirez ou déplacez d\'abord des bouteilles');
     // Une seule transaction : les nouvelles fiches et l'ancienne (réduite ou supprimée), jamais l'un sans l'autre
-    const rest = n < q ? [{ ...lost, quantite: q - n }] : [];
-    if (!await persistBatch([...recs, ...rest], rest.length ? [] : [lost.id])) return;
+    if (!await persistBatch(put, remove)) return;
+    const recs = put.filter((b) => b.id !== lost.id), q = qty(lost), n = recs.length;
     refresh(); showCase(caseId, recs.map((b) => b.id)); saved(n < q ? `${n} rangées, ${q - n} encore à ranger` : `${n} bouteille${n > 1 ? 's rangées' : ' rangée'}`);
   }
   else if (act === 'lost-remove') {
     const caseId = selected?.caseId, lost = caseId && bottleAt(caseId); if (!lost) return;
-    if (!await ask(`Retirer ces ${qty(lost)} bouteille(s) « ${lost.nom || 'Sans nom'} » de la cave ?`, 'Retirer')) return;
+    if (!await ask(qty(lost) > 1 ? `Retirer ces ${qty(lost)} bouteilles « ${lost.nom || 'Sans nom'} » de la cave ?` : `Retirer la bouteille « ${lost.nom || 'Sans nom'} » de la cave ?`, 'Retirer')) return;
     if (!await deleteRecord(lost.id)) return;
     refresh(); showCase(caseId); offerUndo('Bouteilles retirées', [lost]);
   }
   else if (act === 'over-show') {   // la bouteille du haut, qui n'a plus de place dans la case
-    const pile = selected?.caseId ? pileOf(allBottles(), selected.caseId) : []; if (pile.length) selectBottle(pile.at(-1).id);
+    const pile = selected?.caseId ? pileOf(allBottles(), selected.caseId) : []; if (pile.length) selectBottle(pile[pile.length - 1].id);
   }
   else if (act === 'drink' && qty(b) > 1) { const after = { ...b, quantite: qty(b) - 1 }; if (await saveRecord(after)) { refresh(); reselect(); offerUndo('Une bouteille de moins', [b], [after]); } }
   else if (act === 'drink' || act === 'remove') {
