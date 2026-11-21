@@ -98,6 +98,21 @@ export const LEGACY_CONFIG = {
 /** Faut-il figer l'ancien réglage ? Oui si des fiches existent alors qu'aucun réglage n'a jamais été enregistré. */
 export const needsLegacyConfig = (hasStoredConfig, recordCount) => !hasStoredConfig && recordCount > 0;
 
+/** Nombre de vraies fiches (les bouteilles d'exemple ne comptent pas). */
+export const realRecordCount = (list) => list.filter((b) => !b.demo && !b.vide).length;
+
+/**
+ * Appareil de test : il n'a que des bouteilles d'exemple, et pas de réglage enregistré ou l'ancien rangement
+ * en alvéoles. On le remet alors au format de Verdelot, avec des exemples régénérés à ce format.
+ * Dès qu'une vraie fiche existe, on ne touche à rien.
+ * @param {object|null} storedConfig réglage enregistré sur l'appareil (null s'il n'y en a pas)
+ */
+export function shouldResetDemoToVerdelot(storedConfig, list) {
+  if (!list.length || realRecordCount(list) > 0) return false;
+  if (!storedConfig) return true;
+  return JSON.stringify(normalizeConfig(storedConfig).racks) === JSON.stringify(LEGACY_CONFIG.racks);
+}
+
 /**
  * Disposition des bouteilles visibles dans un emplacement, selon le type de rangement :
  * `pts` = positions [x, y, z] (m) par rapport au centre de l'emplacement, dans l'ordre de remplissage ;

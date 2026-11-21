@@ -1,7 +1,7 @@
 // Tests des fonctions pures (lib.js) : `npm test`
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { esc, norm, clamp, slotId, parseId, isValidId, normalizeConfig, DEFAULT_CONFIG, STYLES, rackLimits, recordsIn, drinkSoon, rackSize, meters, isNewerVersion, LEGACY_CONFIG, needsLegacyConfig, cellLayout, qty, totalBottles, suggestions, findKnownWine, inheritableFields } from '../lib.js';
+import { esc, norm, clamp, slotId, parseId, isValidId, normalizeConfig, DEFAULT_CONFIG, STYLES, rackLimits, recordsIn, drinkSoon, rackSize, meters, isNewerVersion, LEGACY_CONFIG, needsLegacyConfig, realRecordCount, shouldResetDemoToVerdelot, cellLayout, qty, totalBottles, suggestions, findKnownWine, inheritableFields } from '../lib.js';
 
 test('esc neutralise le HTML', () => {
   assert.equal(esc('<img src=x onerror="a()">'), '&lt;img src=x onerror=&quot;a()&quot;&gt;');
@@ -144,4 +144,16 @@ test('isNewerVersion : compare numériquement, ignore ce qui est illisible', () 
   assert.equal(isNewerVersion('0.2.9', '0.3.0'), false);
   assert.equal(isNewerVersion('?', '0.3.0'), false);
   assert.equal(isNewerVersion(null, '0.3.0'), false);
+});
+
+test('shouldResetDemoToVerdelot : seulement un appareil de test (exemples seuls) sur l\'ancien rangement', () => {
+  const demo = [{ id: 'G:0:0', demo: true }, { id: 'D:3:2', demo: true }];
+  const real = [...demo, { id: 'IG:1:1', nom: 'Vraie bouteille' }];
+  assert.equal(realRecordCount(real), 1);
+  assert.equal(shouldResetDemoToVerdelot(LEGACY_CONFIG, demo), true);     // téléphone de test bloqué en alvéoles
+  assert.equal(shouldResetDemoToVerdelot(null, demo), true);              // exemples d'une ancienne version, sans réglage
+  assert.equal(shouldResetDemoToVerdelot(LEGACY_CONFIG, real), false);    // une vraie fiche : on ne touche à rien
+  assert.equal(shouldResetDemoToVerdelot(DEFAULT_CONFIG, demo), false);   // déjà au format Verdelot
+  assert.equal(shouldResetDemoToVerdelot(LEGACY_CONFIG, []), false);      // rien à remettre en forme
+  assert.equal(shouldResetDemoToVerdelot({ ...LEGACY_CONFIG, nom: 'Autre nom' }, demo), true);   // le nom ne compte pas
 });

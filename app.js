@@ -1,5 +1,5 @@
 import * as THREE from './vendor/three.module.min.js';
-import { esc, clamp, norm, RACK_ORDER, RACK_NAMES, slotId, parseId, isValidId, DEFAULT_CONFIG, STYLES, DEFAULT_STYLE, rackLimits, normalizeConfig, rackSizes, rackSize, meters, recordsIn, isNewerVersion, LEGACY_CONFIG, needsLegacyConfig, cellLayout, drinkSoon, qty, totalBottles, suggestions, findKnownWine, inheritableFields } from './lib.js';
+import { esc, clamp, norm, RACK_ORDER, RACK_NAMES, slotId, parseId, isValidId, DEFAULT_CONFIG, STYLES, DEFAULT_STYLE, rackLimits, normalizeConfig, rackSizes, rackSize, meters, recordsIn, isNewerVersion, LEGACY_CONFIG, needsLegacyConfig, realRecordCount, shouldResetDemoToVerdelot, cellLayout, drinkSoon, qty, totalBottles, suggestions, findKnownWine, inheritableFields } from './lib.js';
 import { openStore } from './db.js';
 import { getApiKey, setApiKey, clearApiKey, cleanApiKey, scanLabel, testApiKey, scanErrorMessage } from './scan.js';
 
@@ -1259,9 +1259,25 @@ if (new URLSearchParams(location.search).has('debug')) window.__cave = { tapSlot
     store = await openStore();
     for (const b of await store.getAll()) if (!b.vide) records.set(b.id, b);
   } catch (e) { console.error(e); toast('Stockage indisponible : les fiches ne seront pas enregistrées'); }
-  let hasStoredConfig = true;
-  try { hasStoredConfig = !!(localStorage.getItem(CONFIG_KEY) || localStorage.getItem('cave-config-v3') || localStorage.getItem('cave-config-v2')); } catch { /* stockage bloqué */ }
-  if (needsLegacyConfig(hasStoredConfig, records.size)) {
+  let hasStoredConfig = true, storedConfig = null;
+  try {
+    const raw = localStorage.getItem(CONFIG_KEY) || localStorage.getItem('cave-config-v3') || localStorage.getItem('cave-config-v2');
+    hasStoredConfig = !!raw; storedConfig = raw ? JSON.parse(raw) : null;
+  } catch { /* stockage bloqué ou réglage illisible */ }
+  const all = [...records.values()];
+  if (store && shouldResetDemoToVerdelot(storedConfig, all)) {
+    // Appareil de test (seulement des bouteilles d'exemple) resté sur l'ancien rangement : format Verdelot,
+    // avec des exemples régénérés à ce format au prochain lancement.
+    // Réglage d'abord : si le stockage est bloqué, on ne supprime rien.
+    let configSaved = false;
+    try {
+      localStorage.setItem(CONFIG_KEY, JSON.stringify({ ...DEFAULT_CONFIG, nom: config.nom }));
+      localStorage.removeItem('cave-demo');
+      configSaved = true;
+    } catch { /* stockage bloqué : on continue avec ce qu'on a */ }
+    if (configSaved && await persist((st) => st.removeMany(all.map((b) => b.id)))) { location.reload(); return; }
+  }
+  if (needsLegacyConfig(hasStoredConfig, realRecordCount(all))) {
     // Fiches créées avec la 0.2.0 (alvéoles partout) : on garde ce rangement pour qu'elles restent à leur place.
     try { localStorage.setItem(CONFIG_KEY, JSON.stringify(LEGACY_CONFIG)); location.reload(); return; } catch { /* on continue avec le réglage par défaut */ }
   } else if (!hasStoredConfig && store) {   // sans base lisible, on ne peut pas savoir s'il y a des fiches : on n'écrit rien
