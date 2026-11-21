@@ -1,5 +1,5 @@
 import * as THREE from './vendor/three.module.min.js';
-import { esc, clamp, norm, RACK_ORDER, RACK_NAMES, slotId, parseId, isValidId, DEFAULT_CONFIG, CONFIG_REV, STYLES, DEFAULT_STYLE, rackLimits, normalizeConfig, rackSizes, rackSize, meters, recordsIn, isNewerVersion, LEGACY_CONFIG, needsLegacyConfig, realRecordCount, shouldResetDemoToVerdelot, cellLayout, drinkSoon, qty, totalBottles, suggestions, findKnownWine, inheritableFields } from './lib.js';
+import { esc, clamp, norm, RACK_ORDER, RACK_NAMES, slotId, parseId, isValidId, DEFAULT_CONFIG, CONFIG_REV, STYLES, rackGrid, casePlaces, pileOf, BOTTLE_D, DEFAULT_STYLE, rackLimits, normalizeConfig, rackSizes, rackSize, meters, recordsIn, isNewerVersion, LEGACY_CONFIG, needsLegacyConfig, realRecordCount, shouldResetDemoToVerdelot, cellLayout, drinkSoon, qty, totalBottles, suggestions, findKnownWine, inheritableFields } from './lib.js';
 import { openStore } from './db.js';
 import { getApiKey, setApiKey, clearApiKey, cleanApiKey, scanLabel, testApiKey, scanErrorMessage } from './scan.js';
 
@@ -92,9 +92,11 @@ const RACK_FRONT_X = R - RACK_D;
 
 const rk = rackSizes(config);
 /** Pour chaque casier : taille d'un emplacement (cw × ch) et du casier entier (W × H), selon son type de rangement. */
+// cw × ch : taille nominale d'un emplacement (sert au zoom) ; W × H : taille réelle, les cases maçonnées pouvant
+// avoir des colonnes et des rangées de tailles différentes (séparations réglées à la main).
 const dims = Object.fromEntries(RACK_ORDER.map((k) => {
-  const st = STYLES[rk[k].style];
-  return [k, { cw: st.w, ch: st.h, W: rk[k].cols * st.w, H: rk[k].rows * st.h }];
+  const st = STYLES[rk[k].style], grid = rackGrid(rk[k]);
+  return [k, { cw: st.w, ch: st.h, W: grid.W, H: grid.H, grid }];
 }));
 const islandLen = Math.max(dims.IG.W, dims.ID.W) + 0.2;
 const outerLen = Math.max(dims.G.W, dims.D.W);
@@ -251,33 +253,91 @@ function makeLabel(text, key) {
   s.scale.set(1.5, 0.375, 1); s.renderOrder = 10; s.userData.rack = key; decor.add(s); return s;
 }
 function makeRack(key, x, rotY, flip, hasBody, labelText) {
-  const { cols, rows, style } = rk[key], { cw, ch, W, H } = dims[key], st = STYLES[style], layout = cellLayout(style);
+  const { cols, rows, style } = rk[key], { cw, ch, W, H, grid } = dims[key], layout = cellLayout(style), isCases = style === 'cases';
   const group = new THREE.Group(); group.position.set(x, 0, 0); group.rotation.y = rotY; scene.add(group);
-  const tex = cellTexture(style).clone(); tex.needsUpdate = true; tex.repeat.set(cols, rows);
-  const plane = new THREE.Mesh(new THREE.PlaneGeometry(W, H), new THREE.MeshBasicMaterial({ map: tex }));
+  let plane;
+  if (isCases) {
+    // Cases maçonnées : façade dessinée case par case (tailles inégales) ; ce plan invisible sert au toucher.
+    plane = new THREE.Mesh(new THREE.PlaneGeometry(W, H), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  } else {
+    const tex = cellTexture(style).clone(); tex.needsUpdate = true; tex.repeat.set(cols, rows);
+    plane = new THREE.Mesh(new THREE.PlaneGeometry(W, H), new THREE.MeshBasicMaterial({ map: tex }));
+  }
   plane.position.set(0, BASE + H / 2, 0.004); plane.userData.rack = key; group.add(plane);
   let body = null;
   if (hasBody) {
     body = withEdges(new THREE.Mesh(new THREE.BoxGeometry(W + 0.06, BASE + H + 0.04, RACK_D), new THREE.MeshBasicMaterial({ color: C.casier })));
     body.position.set(0, (BASE + H + 0.04) / 2, -RACK_D / 2); body.userData.rack = key; group.add(body);
   }
-  const n = cols * rows * layout.pts.length;   // nombre maximal de bouteilles visibles dans ce casier
-  // Toutes les bouteilles sont montrées culot vers l'allée (bouchon caché), quel que soit le rangement réel.
-  const glass = new THREE.InstancedMesh(glassGeo, glassMat, n);
-  const rings = new THREE.InstancedMesh(ringGeo, ringMat, cols * rows);
-  for (const m of [glass, rings]) { m.count = 0; m.frustumCulled = false; group.add(m); }
-  rings.renderOrder = 5;
   group.updateMatrixWorld(true);
   const normal = new THREE.Vector3(0, 0, 1).applyQuaternion(group.quaternion);
   const label = makeLabel(labelText, key);
   label.position.set(x + normal.x * (hasBody ? -RACK_D / 2 : 0.55), BASE + H + (hasBody ? 0.4 : 0.6), (key === 'G' || key === 'ID' ? -1 : 1) * W * 0.22);
   const ringS = Math.min(cw, ch) / 0.2;   // anneaux de sélection et de recherche à la taille de l'emplacement
-  racks[key] = { key, group, plane, body, cols, rows, flip, cw, ch, W, H, layout, glass, rings, ringS, normal, label };
+  racks[key] = { key, group, plane, body, cols, rows, flip, cw, ch, W, H, layout, ringS, normal, label, isCases, grid, facade: null, places: [], glass: null, rings: null };
+  buildFacade(racks[key]);
 }
-function slotLocal(rack, c, r) {
-  const ci = rack.flip ? rack.cols - 1 - c : c;
-  return [(ci + 0.5) * rack.cw - rack.W / 2, BASE + (r + 0.5) * rack.ch];
+/** Places (ordre de la pile) de chaque case d'un casier en cases maçonnées : rack.places[c][r]. */
+function computePlaces(rack) {
+  rack.places = rack.isCases ? rack.grid.colW.map((w) => rack.grid.rowH.map((h) => casePlaces(w, h))) : [];
 }
+/**
+ * (Re)construit la façade d'un casier en cases maçonnées (cases et séparations) et les pastilles des bouteilles.
+ * Appelée à la création et après chaque déplacement d'une séparation (la taille totale ne change pas).
+ */
+function buildFacade(rack) {
+  const { group, cols, rows, layout } = rack;
+  for (const m of [rack.facade, rack.glass, rack.rings]) if (m) { group.remove(m); m.traverse?.((o) => o.geometry?.dispose()); }
+  rack.facade = null;
+  computePlaces(rack);
+  if (rack.isCases) {
+    const g = new THREE.Group(), tex = cellTexture('cases'), { colW, rowH, rowY } = rack.grid;
+    for (let c = 0; c < cols; c++) for (let r = 0; r < rows; r++) {
+      const [cx, cy, w, h] = caseLocal(rack, c, r);
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), caseMat(tex)); m.position.set(cx, cy, 0.003); g.add(m);
+    }
+    // Séparations intérieures : objets fins, qu'on peut toucher et allumer dans « Ajuster les séparations ».
+    for (let i = 1; i < cols; i++) {
+      const x = caseLocal(rack, i, 0)[0] + (rack.flip ? 1 : -1) * colW[i] / 2;
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(SEP_W, rack.H), sepMat); m.position.set(x, BASE + rack.H / 2, 0.006);
+      m.userData.sep = { axis: 'col', i: i - 1 }; g.add(m);
+    }
+    for (let j = 1; j < rows; j++) {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(rack.W, SEP_W), sepMat); m.position.set(0, BASE + rowY[j], 0.006);
+      m.userData.sep = { axis: 'row', i: j - 1 }; g.add(m);
+    }
+    group.add(g); rack.facade = g;
+  }
+  // Nombre maximal de bouteilles visibles : toutes les places des cases maçonnées, sinon selon la disposition.
+  const n = rack.isCases ? rack.places.flat().reduce((s, p) => s + p.length, 0) : cols * rows * layout.pts.length;
+  // Toutes les bouteilles sont montrées culot vers l'allée (bouchon caché), quel que soit le rangement réel.
+  rack.glass = new THREE.InstancedMesh(glassGeo, glassMat, Math.max(1, n));
+  rack.rings = new THREE.InstancedMesh(ringGeo, ringMat, Math.max(1, rack.isCases ? n : cols * rows));
+  for (const m of [rack.glass, rack.rings]) { m.count = 0; m.frustumCulled = false; group.add(m); }
+  rack.rings.renderOrder = 5;
+}
+const SEP_W = 0.025;   // épaisseur dessinée d'une séparation entre deux cases
+const sepMat = new THREE.MeshBasicMaterial({ color: 0x1f2630 });
+const caseMatCache = new Map();
+function caseMat(tex) { if (!caseMatCache.has(tex)) caseMatCache.set(tex, new THREE.MeshBasicMaterial({ map: tex })); return caseMatCache.get(tex); }
+/**
+ * Centre et taille d'une case dans le repère du casier : [cx, cy, largeur, hauteur].
+ * Colonne 0 = la plus proche de l'entrée (à droite du casier quand il est « retourné »).
+ */
+function caseLocal(rack, c, r) {
+  const { colW, rowH, colX, rowY } = rack.grid, w = colW[c], h = rowH[r];
+  const x0 = rack.flip ? rack.W / 2 - colX[c] - w : -rack.W / 2 + colX[c];
+  return [x0 + w / 2, BASE + rowY[r] + h / 2, w, h];
+}
+/** Position d'une bouteille de case maçonnée dans son casier (selon son rang dans la pile), ou null si elle ne tient pas. */
+function bottleLocal(rec) {
+  const { k, c, r, u } = parseId(rec.id), rack = racks[k];
+  if (!u || !rack?.isCases || !inRack(k, c, r)) return null;
+  const p = rack.places[c][r][rec.pile ?? 0]; if (!p) return null;
+  const [cx, cy] = caseLocal(rack, c, r);
+  return [cx + p[0], cy + p[1]];   // x positif = à droite vu depuis l'allée, comme le repère du casier
+}
+function slotLocal(rack, c, r) { const [x, y] = caseLocal(rack, c, r); return [x, y]; }
 function slotWorld(key, c, r, out = new THREE.Vector3()) {
   const rack = racks[key]; const [lx, ly] = slotLocal(rack, c, r);
   return rack.group.localToWorld(out.set(lx, ly, 0));
@@ -300,7 +360,15 @@ function rebuildBottles() {
   for (const k of RACK_ORDER) {
     const rack = racks[k], { pts, s } = rack.layout; let i = 0;
     tmpS.setScalar(s);
-    for (let c = 0; c < rack.cols; c++) for (let r = 0; r < rack.rows; r++) {
+    if (rack.isCases) {   // une pastille par bouteille, à sa place dans la pile, à taille réelle
+      tmpS.setScalar(BOTTLE_D / 0.149);   // 0,149 m : diamètre du culot de glassGeo
+      for (const rec of records.values()) {
+        if (rec.vide || rec.id === hiddenId || !rec.id.startsWith(k + ':')) continue;
+        const pos = bottleLocal(rec); if (!pos) continue;
+        rack.glass.setMatrixAt(i, tmpM.compose(tmpP.set(pos[0], pos[1], 0), IDQ, tmpS));
+        rack.glass.setColorAt(i, tmpC.setHex(typeOf(rec).verre)); i++;
+      }
+    } else for (let c = 0; c < rack.cols; c++) for (let r = 0; r < rack.rows; r++) {
       const id = slotId(k, c, r), rec = bottleAt(id);
       if (!rec || id === hiddenId) continue;   // non enregistrée : l'emplacement reste vide à l'écran
       const [lx, ly] = slotLocal(rack, c, r), t = typeOf(rec);
@@ -317,9 +385,12 @@ let highlighted = [];    // identifiants mis en évidence par la recherche (anne
 function rebuildRings() {
   const count = {}; for (const k of RACK_ORDER) count[k] = 0;
   for (const id of highlighted) {
-    const { k, c, r } = parseId(id); if (!inRack(k, c, r)) continue;
-    const rack = racks[k], [lx, ly] = slotLocal(rack, c, r);
-    rack.rings.setMatrixAt(count[k]++, tmpM.compose(tmpP.set(lx, ly, BOTTLE_OUT + 0.004), IDQ, tmpS.setScalar(rack.ringS)));
+    const { k, c, r, u } = parseId(id); if (!inRack(k, c, r)) continue;
+    const rack = racks[k];
+    // Case maçonnée : un anneau autour de la bouteille trouvée ; ailleurs, autour de l'emplacement.
+    const pos = u ? bottleLocal(records.get(id) || {}) : slotLocal(rack, c, r); if (!pos) continue;
+    const s = u ? BOTTLE_D / 0.18 : rack.ringS;
+    rack.rings.setMatrixAt(count[k]++, tmpM.compose(tmpP.set(pos[0], pos[1], BOTTLE_OUT + 0.004), IDQ, tmpS.setScalar(s)));
   }
   for (const k of RACK_ORDER) { racks[k].rings.count = count[k]; racks[k].rings.instanceMatrix.needsUpdate = true; }
 }
@@ -525,8 +596,19 @@ function pick(cx, cy) {
   if (view.mode === 'rack') {
     const rack = racks[view.key], h = raycaster.intersectObject(rack.plane, false)[0]; if (!h) return null;
     const l = rack.group.worldToLocal(tmpV.copy(h.point));
-    const ci = clamp(Math.floor((l.x + rack.W / 2) / rack.cw), 0, rack.cols - 1), r = clamp(Math.floor((l.y - BASE) / rack.ch), 0, rack.rows - 1);
-    return { type: 'slot', key: rack.key, c: rack.flip ? rack.cols - 1 - ci : ci, r };
+    // Colonne et rangée touchées (tailles éventuellement inégales), mesurées depuis l'entrée et depuis le bas
+    const fromEntry = rack.flip ? rack.W / 2 - l.x : l.x + rack.W / 2, { colX, rowY } = rack.grid;
+    const c = clamp(colX.findLastIndex((x) => x <= fromEntry), 0, rack.cols - 1), r = clamp(rowY.findLastIndex((y) => y <= l.y - BASE), 0, rack.rows - 1);
+    const hit = { type: 'slot', key: rack.key, c, r };
+    if (rack.isCases) {   // la bouteille la plus proche du doigt dans cette case, s'il y en a une sous le doigt
+      let best = null, bd = BOTTLE_D / 2;
+      for (const b of pileOf(allBottles(), slotId(rack.key, c, r))) {
+        const p = bottleLocal(b); if (!p) continue;
+        const d = Math.hypot(p[0] - l.x, p[1] - l.y); if (d <= bd) { bd = d; best = b.id; }
+      }
+      if (best) hit.id = best;
+    }
+    return hit;
   }
   const targets = []; for (const k of RACK_ORDER) { const r = racks[k]; targets.push(r.plane); if (r.body) targets.push(r.body); }
   const labelHit = raycaster.intersectObjects(RACK_ORDER.map((k) => racks[k].label), false)[0];
