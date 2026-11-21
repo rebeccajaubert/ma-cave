@@ -1,7 +1,7 @@
 // Tests des fonctions pures (lib.js) : `npm test`
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { esc, norm, clamp, slotId, parseId, isValidId, normalizeConfig, DEFAULT_CONFIG, STYLES, rackLimits, recordsIn, drinkSoon, rackSize, meters, isNewerVersion, LEGACY_CONFIG, needsLegacyConfig, realRecordCount, shouldResetDemoToVerdelot, cellLayout, qty, totalBottles, suggestions, findKnownWine, inheritableFields } from '../lib.js';
+import { esc, norm, clamp, slotId, parseId, isValidId, normalizeConfig, DEFAULT_CONFIG, CONFIG_REV, STYLES, rackLimits, recordsIn, drinkSoon, rackSize, meters, isNewerVersion, LEGACY_CONFIG, needsLegacyConfig, realRecordCount, shouldResetDemoToVerdelot, cellLayout, qty, totalBottles, suggestions, findKnownWine, inheritableFields } from '../lib.js';
 
 test('esc neutralise le HTML', () => {
   assert.equal(esc('<img src=x onerror="a()">'), '&lt;img src=x onerror=&quot;a()&quot;&gt;');
@@ -156,4 +156,28 @@ test('shouldResetDemoToVerdelot : seulement un appareil de test (exemples seuls)
   assert.equal(shouldResetDemoToVerdelot(DEFAULT_CONFIG, demo), false);   // déjà au format Verdelot
   assert.equal(shouldResetDemoToVerdelot(LEGACY_CONFIG, []), false);      // rien à remettre en forme
   assert.equal(shouldResetDemoToVerdelot({ ...LEGACY_CONFIG, nom: 'Autre nom' }, demo), true);   // le nom ne compte pas
+});
+
+test('normalizeConfig : casiers métalliques à 15 rangées (0.3.4)', () => {
+  assert.equal(DEFAULT_CONFIG.racks.ID.rows, 15);
+  assert.equal(DEFAULT_CONFIG.racks.D.rows, 15);
+  // Ancien réglage d'origine (36 × 12, sans numéro de révision) : passe à 15 rangées. Les rangées se comptent
+  // depuis le bas, donc les fiches existantes ne bougent pas.
+  const old = normalizeConfig({ nom: 'X', racks: { ...DEFAULT_CONFIG.racks, ID: { style: 'metal', cols: 36, rows: 12 }, D: { style: 'metal', cols: 36, rows: 12 } } });
+  assert.equal(old.racks.ID.rows, 15);
+  assert.equal(old.racks.D.rows, 15);
+  // Une valeur choisie par l'utilisateur n'est pas touchée
+  const mine = normalizeConfig({ racks: { D: { style: 'metal', cols: 30, rows: 12 }, ID: { style: 'metal', cols: 36, rows: 10 } } });
+  assert.equal(mine.racks.D.rows, 12);
+  assert.equal(mine.racks.ID.rows, 10);
+  // Une fois converti (révision enregistrée), 36 × 12 redevient un choix délibéré
+  const chosen = normalizeConfig({ ...old, racks: { ...old.racks, D: { style: 'metal', cols: 36, rows: 12 } } });
+  assert.equal(chosen.racks.D.rows, 12);
+  // Et la conversion est stable
+  assert.deepEqual(normalizeConfig(old), old);
+});
+
+test('normalizeConfig : un 36 × 12 choisi dans le formulaire (rev fourni) est conservé', () => {
+  const c = normalizeConfig({ nom: 'X', rev: CONFIG_REV, racks: { ...DEFAULT_CONFIG.racks, D: { style: 'metal', cols: 36, rows: 12 } } });
+  assert.equal(c.racks.D.rows, 12);
 });

@@ -53,11 +53,17 @@ export function rackLimits(key, style) {
 // ---------- Dimensions de la cave ----------
 
 // Cave de Verdelot : en descendant, couloir de gauche en cases maçonnées, couloir de droite en casiers métalliques.
+/**
+ * Révision du format de réglage. Un réglage enregistré avant la révision 2 (v0.3.4) qui a gardé l'ancien
+ * casier métallique d'origine (36 × 12) passe à 15 rangées, la vraie hauteur à Verdelot.
+ */
+export const CONFIG_REV = 2;
 export const DEFAULT_CONFIG = {
   nom: 'La Cave de Verdelot',
+  rev: CONFIG_REV,
   racks: {
     G: { style: 'cases', cols: 6, rows: 5 }, IG: { style: 'cases', cols: 6, rows: 5 },
-    ID: { style: 'metal', cols: 36, rows: 12 }, D: { style: 'metal', cols: 36, rows: 12 },
+    ID: { style: 'metal', cols: 36, rows: 15 }, D: { style: 'metal', cols: 36, rows: 15 },
   },
 };
 
@@ -72,13 +78,18 @@ export function normalizeConfig(c) {
   const src = {};
   if (c.racks && typeof c.racks === 'object') Object.assign(src, c.racks);
   else if (c.cols) for (const k of RACK_ORDER) src[k] = { cols: c.cols, rows: k === 'IG' || k === 'ID' ? c.rowsIlot : c.rowsMur };
+  const beforeRev2 = !(Number(c.rev) >= 2);
   for (const k of RACK_ORDER) {
     // Casier absent : réglage par défaut. Casier d'un ancien format (sans type) : c'étaient des alvéoles.
     const r = src[k] || out.racks[k], style = STYLES[r.style] ? r.style : DEFAULT_STYLE, lim = rackLimits(k, style);
+    let rows = parseInt(r.rows) || out.racks[k].rows;
+    // Ancien casier métallique d'origine (36 × 12) : 15 rangées. Ajouter des rangées en haut ne déplace aucune fiche
+    // (les rangées se comptent depuis le bas).
+    if (beforeRev2 && style === 'metal' && parseInt(r.cols) === 36 && rows === 12) rows = 15;
     out.racks[k] = {
       style,
       cols: clamp(parseInt(r.cols) || out.racks[k].cols, 1, lim.cols),
-      rows: clamp(parseInt(r.rows) || out.racks[k].rows, 1, lim.rows),
+      rows: clamp(rows, 1, lim.rows),
     };
   }
   return out;
@@ -90,6 +101,7 @@ export function normalizeConfig(c) {
  */
 export const LEGACY_CONFIG = {
   nom: DEFAULT_CONFIG.nom,
+  rev: CONFIG_REV,
   racks: {
     G: { style: 'alveoles', cols: 12, rows: 5 }, IG: { style: 'alveoles', cols: 12, rows: 6 },
     ID: { style: 'alveoles', cols: 12, rows: 6 }, D: { style: 'alveoles', cols: 12, rows: 5 },

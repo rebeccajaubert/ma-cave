@@ -1,5 +1,5 @@
 import * as THREE from './vendor/three.module.min.js';
-import { esc, clamp, norm, RACK_ORDER, RACK_NAMES, slotId, parseId, isValidId, DEFAULT_CONFIG, STYLES, DEFAULT_STYLE, rackLimits, normalizeConfig, rackSizes, rackSize, meters, recordsIn, isNewerVersion, LEGACY_CONFIG, needsLegacyConfig, realRecordCount, shouldResetDemoToVerdelot, cellLayout, drinkSoon, qty, totalBottles, suggestions, findKnownWine, inheritableFields } from './lib.js';
+import { esc, clamp, norm, RACK_ORDER, RACK_NAMES, slotId, parseId, isValidId, DEFAULT_CONFIG, CONFIG_REV, STYLES, DEFAULT_STYLE, rackLimits, normalizeConfig, rackSizes, rackSize, meters, recordsIn, isNewerVersion, LEGACY_CONFIG, needsLegacyConfig, realRecordCount, shouldResetDemoToVerdelot, cellLayout, drinkSoon, qty, totalBottles, suggestions, findKnownWine, inheritableFields } from './lib.js';
 import { openStore } from './db.js';
 import { getApiKey, setApiKey, clearApiKey, cleanApiKey, scanLabel, testApiKey, scanErrorMessage } from './scan.js';
 
@@ -843,8 +843,19 @@ $('sheetBody').addEventListener('click', async (e) => {
     await checkScanKey(key, { keep: key === getApiKey() });
   }
   else if (act === 'scan-clear') { if (await ask('Désactiver la lecture automatique et effacer la clé de cet appareil ?', 'Désactiver')) { clearApiKey(); showScanSettings(); } }
-  else if (act === 'demo') { await seedDemo(); refresh(); showMenu(); toast('Bouteilles d\'exemple ajoutées'); }
-  else if (act === 'cleardemo') { if (!await ask('Retirer toutes les bouteilles d\'exemple ?')) return; await clearDemo(); refresh(); showMenu(); }
+  else if (act === 'demo') {
+    // Exemples par-dessus de vraies fiches : sans danger pour elles (places vides seulement), mais cela mélange
+    // de fausses bouteilles aux vraies dans la cave : on demande confirmation.
+    const real = realRecordCount([...records.values()]);
+    if (real && !await ask(`Vous avez déjà ${real} vraie(s) fiche(s). Des bouteilles d'exemple vont se mélanger aux vôtres dans la cave.\n\nVos fiches ne sont pas modifiées : les exemples ne vont que dans les places vides, et « Retirer les bouteilles d'exemple » les enlève toutes.`, 'Ajouter quand même')) return;
+    await seedDemo(); refresh(); showMenu(); toast('Bouteilles d\'exemple ajoutées');
+  }
+  else if (act === 'cleardemo') {
+    const n = totalBottles([...records.values()].filter((b) => b.demo));
+    if (!await ask(`Retirer les ${n} bouteille(s) d'exemple ? Vos vraies fiches ne sont pas touchées.`, 'Retirer')) return;
+    const removed = await clearDemo(); refresh(); showMenu();
+    if (removed.length) offerUndo('Exemples retirés', removed);
+  }
 });
 // Quand on choisit (ou saisit) le nom d'un vin déjà connu, le reste de la fiche se pré-remplit.
 $('sheetBody').addEventListener('change', (e) => {
@@ -865,7 +876,7 @@ $('sheetBody').addEventListener('submit', async (e) => {
   } else if (e.target.id === 'configForm') {
     const d = Object.fromEntries(new FormData(e.target).entries()), racksIn = {};
     for (const k of RACK_ORDER) racksIn[k] = { style: d[`${k}_style`], cols: d[`${k}_cols`], rows: d[`${k}_rows`] };
-    const next = normalizeConfig({ nom: (d.nom || '').trim(), racks: racksIn });
+    const next = normalizeConfig({ nom: (d.nom || '').trim(), rev: CONFIG_REV, racks: racksIn });   // rev : valeurs choisies à l'instant, aucune conversion
     if (!await confirmConfigChange(next)) return;
     try { localStorage.setItem(CONFIG_KEY, JSON.stringify(next)); } catch { return toast('Impossible d\'enregistrer le réglage sur cet appareil (stockage bloqué)'); }
     location.reload();
@@ -1230,7 +1241,11 @@ $('importInput').addEventListener('change', async (e) => {
     const list = d.bouteilles.filter((b) => b && !b.vide && isValidId(b.id))
       .map((b) => ({ ...b, photo: typeof b.photo === 'string' && b.photo.startsWith('data:image/') ? b.photo : null }));
     if (!store) return toast('Stockage indisponible : impossible de restaurer');
-    if (!await ask(`Restaurer cette sauvegarde (${list.length} fiche(s)) ? Les données actuelles seront remplacées.`)) return;
+    // Restaurer remplace tout et ne peut pas être annulé : on le dit clairement, avec le nombre de fiches perdues.
+    const real = realRecordCount([...records.values()]);
+    const warn = real ? `Les ${real} fiche(s) actuellement sur cet appareil seront effacées définitivement et remplacées par celles de la sauvegarde. Cela ne peut pas être annulé.\n\nConseil : faites d'abord « Sauvegarder mes données ».`
+      : 'Le rangement et les fiches de cet appareil seront remplacés par ceux de la sauvegarde.';
+    if (!await ask(`Restaurer cette sauvegarde (${list.length} fiche(s)) ?\n\n${warn}`, 'Remplacer')) return;
     if (d.config) {   // réglage d'abord : s'il ne peut pas être écrit, on n'a encore rien remplacé
       try { localStorage.setItem(CONFIG_KEY, JSON.stringify(normalizeConfig(d.config))); } catch { return toast('Impossible d\'enregistrer le réglage sur cet appareil : rien n\'a été restauré'); }
     }
@@ -1259,9 +1274,12 @@ async function seedDemo() {
   }
   if (await persist((st) => st.putMany(list))) for (const b of list) records.set(b.id, b);
 }
+/** Retire les bouteilles d'exemple (jamais les vraies fiches) ; renvoie les fiches retirées, pour « Annuler ». */
 async function clearDemo() {
-  const ids = [...records.values()].filter((b) => b.demo).map((b) => b.id);
-  if (await persist((st) => st.removeMany(ids))) for (const id of ids) records.delete(id);
+  const list = [...records.values()].filter((b) => b.demo), ids = list.map((b) => b.id);
+  if (!await persist((st) => st.removeMany(ids))) return [];
+  for (const id of ids) records.delete(id);
+  return list;
 }
 
 document.addEventListener('gesturestart', (e) => e.preventDefault());

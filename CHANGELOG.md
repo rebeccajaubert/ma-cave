@@ -3,6 +3,15 @@
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), versionnement [sémantique](https://semver.org/lang/fr/) :
 `MAJEUR.MINEUR.CORRECTIF`. Le numéro de version est défini dans `version.js` (voir README, « Publier une version »).
 
+## [0.3.4] - 2026-11-21
+
+### Modifié
+- Casiers métalliques : **15 rangées** par défaut (la vraie hauteur à Verdelot). Un appareil resté sur l'ancien réglage d'origine (36 × 12) passe à 15 rangées ; les rangées se comptent depuis le bas, donc aucune fiche ne bouge. Un 36 × 12 choisi volontairement avant cette version est aussi converti : il suffit de le remettre dans « Rangement de la cave », il sera alors gardé.
+- Confirmations plus claires avant les actions risquées :
+  - ajouter des bouteilles d'exemple alors que de vraies fiches existent demande confirmation (les exemples ne vont que dans les places vides et ne touchent jamais une vraie fiche) ;
+  - retirer les exemples indique le nombre de bouteilles, rappelle que les vraies fiches sont gardées, et peut être annulé pendant 10 secondes ;
+  - restaurer une sauvegarde indique combien de fiches actuelles seront effacées définitivement et conseille de sauvegarder d'abord.
+
 ## [0.3.3] - 2026-11-21
 
 ### Corrigé

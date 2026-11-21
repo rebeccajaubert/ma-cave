@@ -46,7 +46,7 @@ Chaque casier (mur gauche, îlot gauche, îlot droit, mur droit) a un **type de 
 
 Par choix esthétique, toutes les bouteilles sont montrées **culot vers l'allée** (bouchon caché), même là où elles sont en réalité goulot vers l'allée.
 
-Réglage par défaut (cave de Verdelot) : couloir de gauche en cases maçonnées, couloir de droite en casiers métalliques. Une fiche reste attachée à son numéro de colonne et de rangée : changer le type de rangement d'un casier qui contient des fiches peut les mélanger, l'app le signale avant d'appliquer.
+Réglage par défaut (cave de Verdelot) : couloir de gauche en cases maçonnées (6 colonnes × 5 rangées), couloir de droite en casiers métalliques (36 colonnes × 15 rangées). Une fiche reste attachée à son numéro de colonne et de rangée : changer le type de rangement d'un casier qui contient des fiches peut les mélanger, l'app le signale avant d'appliquer.
 
 ## Lecture automatique de l'étiquette (optionnelle)
 
