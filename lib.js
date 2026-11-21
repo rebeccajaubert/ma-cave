@@ -66,7 +66,7 @@ export function rackLimits(key, style) {
  * Révision du format de réglage. Un réglage enregistré avant la révision 2 (v0.3.4) qui a gardé l'ancien
  * casier métallique d'origine (36 × 12) passe à 15 rangées, la vraie hauteur à Verdelot.
  */
-export const CONFIG_REV = 2;
+export const CONFIG_REV = 3;   // 3 (v0.4.0) : tailles de colonnes et de rangées réglables (colW / rowH) des cases maçonnées
 export const DEFAULT_CONFIG = {
   nom: 'La Cave de Verdelot',
   rev: CONFIG_REV,
@@ -100,6 +100,15 @@ export function normalizeConfig(c) {
       cols: clamp(parseInt(r.cols) || out.racks[k].cols, 1, lim.cols),
       rows: clamp(rows, 1, lim.rows),
     };
+    // Cases maçonnées : largeur de chaque colonne et hauteur de chaque rangée (séparations réglées à la main).
+    if (style === 'cases') {
+      const st = STYLES.cases, fit = (arr, n, def) => Array.from({ length: n }, (_, i) => {
+        const v = Number(Array.isArray(arr) ? arr[i] : NaN);
+        return Number.isFinite(v) ? Math.round(clamp(v, CASE_MIN, CASE_MAX) * 100) / 100 : def;
+      });
+      if (Array.isArray(r.colW)) out.racks[k].colW = fit(r.colW, out.racks[k].cols, st.w);
+      if (Array.isArray(r.rowH)) out.racks[k].rowH = fit(r.rowH, out.racks[k].rows, st.h);
+    }
   }
   return out;
 }
@@ -336,4 +345,62 @@ export function migrateCaseRecords(list, isCasesRack, capacityOf, rand = Math.ra
     if (n === q) remove.push(old.id); else put.push({ ...old, quantite: q - n, aRanger: true });
   }
   return { put, remove };
+}
+
+// ---------- Géométrie des cases maçonnées ----------
+
+/** Diamètre d'une bouteille couchée (culot), en mètres. */
+export const BOTTLE_D = 0.08;
+/** Taille minimale et maximale d'une case maçonnée, en mètres. */
+export const CASE_MIN = 0.10;
+export const CASE_MAX = 1.5;
+const EDGE = 0.01, EPS = 1e-9;
+
+/**
+ * Places d'une case de `w` × `h` mètres : bouteilles empilées en quinconce, une seule épaisseur.
+ * Rangée du bas : n = ⌊(w − 2 cm) / 8 cm⌋ places, puis n − 1, n, n − 1… décalées d'un demi-diamètre.
+ * @returns {Array<[number, number]>} centres relatifs au centre de la case, DANS L'ORDRE DE LA PILE :
+ *   rangée du bas de droite à gauche, puis la rangée au-dessus… (x positif = à droite vu depuis l'allée)
+ */
+export function casePlaces(w, h) {
+  const D = BOTTLE_D, n = Math.floor((w - 2 * EDGE) / D + EPS), pitch = D * Math.sin(Math.PI / 3), out = [];
+  if (n < 1) return out;
+  for (let i = 0; ; i++) {
+    const y = -h / 2 + EDGE + D / 2 + i * pitch, count = i % 2 ? n - 1 : n;
+    if (y + D / 2 > h / 2 - EDGE + EPS || count < 1) break;
+    const x0 = w / 2 - EDGE - D / 2 - (i % 2 ? D / 2 : 0);   // la plus à droite de la rangée
+    for (let j = 0; j < count; j++) out.push([x0 - j * D, y]);
+  }
+  return out;
+}
+
+/**
+ * Grille d'un casier : taille de chaque colonne (depuis l'entrée) et rangée (depuis le bas), bords cumulés.
+ * Les cases maçonnées peuvent avoir des tailles réglées (colW / rowH) ; les autres types sont réguliers.
+ * @returns {{ colW: number[], rowH: number[], colX: number[], rowY: number[], W: number, H: number }}
+ */
+export function rackGrid(rackCfg) {
+  const st = STYLES[rackCfg.style] || STYLES[DEFAULT_STYLE];
+  const colW = Array.from({ length: rackCfg.cols }, (_, i) => rackCfg.colW?.[i] ?? st.w);
+  const rowH = Array.from({ length: rackCfg.rows }, (_, i) => rackCfg.rowH?.[i] ?? st.h);
+  const cum = (a) => a.reduce((acc, v, i) => (acc.push(i ? acc[i - 1] + a[i - 1] : 0), acc), []);
+  const colX = cum(colW), rowY = cum(rowH);
+  return { colW, rowH, colX, rowY, W: colX.at(-1) + colW.at(-1), H: rowY.at(-1) + rowH.at(-1) };
+}
+
+/**
+ * Déplace la séparation entre `sizes[i]` et `sizes[i + 1]` de `delta` mètres (au centimètre), sans changer
+ * la somme. La séparation s'arrête à la dernière position où les deux tailles restent ≥ CASE_MIN et acceptées
+ * par `accept(index, taille)` (par exemple : la case garde assez de places pour ses bouteilles).
+ * @returns {number[]} nouvelles tailles (copie)
+ */
+export function moveSeparator(sizes, i, delta, accept) {
+  const out = [...sizes], pair = sizes[i] + sizes[i + 1], cm = (v) => Math.round(v * 100) / 100;
+  const steps = Math.round(Math.abs(delta) * 100), dir = Math.sign(delta);
+  for (let s = 1; s <= steps; s++) {
+    const a = cm(sizes[i] + dir * s / 100), b = cm(pair - a);
+    if (a < CASE_MIN - EPS || b < CASE_MIN - EPS || !accept(i, a) || !accept(i + 1, b)) break;
+    out[i] = a; out[i + 1] = b;
+  }
+  return out;
 }
