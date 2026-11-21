@@ -14,9 +14,9 @@ test('norm retire accents et majuscules', () => {
 
 test('slotId / parseId / isValidId', () => {
   assert.equal(slotId('G', 12, 4), 'G:12:4');
-  assert.deepEqual(parseId('IG:0:5'), { k: 'IG', c: 0, r: 5 });
+  assert.deepEqual(parseId('IG:0:5'), { k: 'IG', c: 0, r: 5, u: null });
   assert.ok(isValidId('D:3:2'));
-  for (const bad of ['ZZ:1:1', 'G:1', 'G:a:2', '', null, 42]) assert.ok(!isValidId(bad), String(bad));
+  for (const bad of ['ZZ:1:1', 'G:1', 'G:a:2', 'G:1:2:', '', null, 42]) assert.ok(!isValidId(bad), String(bad));
 });
 
 test('normalizeConfig : valeurs par défaut et bornes selon le type de rangement', () => {

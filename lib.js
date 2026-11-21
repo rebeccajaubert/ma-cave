@@ -20,8 +20,17 @@ export const RACK_NAMES = { G: 'Mur gauche', IG: 'Îlot, côté gauche', ID: 'Î
 
 /** Identifiant d'un emplacement : casier, colonne, rangée (comptées à partir de 0). Ex. « G:12:4 ». */
 export const slotId = (k, c, r) => `${k}:${c}:${r}`;
-export const parseId = (id) => { const [k, c, r] = id.split(':'); return { k, c: +c, r: +r }; };
-export const isValidId = (id) => typeof id === 'string' && /^(G|IG|ID|D):\d+:\d+$/.test(id);
+/** Décompose un identifiant. `u` est le suffixe d'une bouteille de case maçonnée (`K:c:r:u`), sinon null. */
+export const parseId = (id) => { const [k, c, r, u] = id.split(':'); return { k, c: +c, r: +r, u: u ?? null }; };
+export const isValidId = (id) => typeof id === 'string' && /^(G|IG|ID|D):\d+:\d+(:[a-z0-9]+)?$/.test(id);
+/** Case (`K:c:r`) d'un identifiant d'emplacement ou de bouteille. */
+export const caseIdOf = (id) => id.split(':').slice(0, 3).join(':');
+/**
+ * Identifiant stable d'une nouvelle bouteille de case maçonnée : `K:c:r:u`. Le suffixe ne change pas quand la
+ * bouteille descend dans la pile (seul son champ `pile` change).
+ */
+export const newBottleId = (caseId, rand = Math.random) =>
+  `${caseId}:${Date.now().toString(36)}${Math.floor(rand() * 36 ** 4).toString(36).padStart(4, '0')}`;
 
 // ---------- Types de rangement ----------
 
@@ -244,4 +253,87 @@ export function isNewerVersion(a, b) {
   if (!x || !y) return false;
   for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i];
   return false;
+}
+
+// ---------- Pile d'une case maçonnée ----------
+// Une case est une pile : ses bouteilles occupent les rangs 0…n−1 sans trou (0 = coin en bas à droite).
+// On ajoute toujours en haut ; quand une bouteille est retirée, celles du dessus descendent d'un cran.
+// Les fonctions ci-dessous ne modifient rien : elles renvoient des copies des fiches à réécrire.
+
+const byPile = (a, b) => (a.pile ?? 0) - (b.pile ?? 0) || (a.ajout ?? 0) - (b.ajout ?? 0) || String(a.id).localeCompare(String(b.id));
+
+/** Bouteilles d'une case (fiches à 4 parties), triées par rang dans la pile. */
+export function pileOf(list, caseId) {
+  return list.filter((b) => b && !b.vide && parseId(b.id).u && caseIdOf(b.id) === caseId).sort(byPile);
+}
+
+/**
+ * Rangs à donner à `n` nouvelles bouteilles, en haut de la pile.
+ * @throws {RangeError} si la case n'a pas assez de places ; `cause` = nombre de places libres
+ */
+export function pushToPile(list, caseId, n, capacity) {
+  const count = pileOf(list, caseId).length;
+  if (count + n > capacity) throw new RangeError('place', { cause: Math.max(0, capacity - count) });
+  return Array.from({ length: n }, (_, i) => count + i);
+}
+
+/**
+ * Retire une bouteille de sa pile : renvoie la fiche à supprimer et les fiches du dessus, descendues d'un cran.
+ * À écrire dans UNE transaction, pour ne jamais laisser de trou ni deux bouteilles au même rang.
+ * @returns {{ put: object[], remove: string[] }}
+ */
+export function removeFromPile(list, id) {
+  const gone = list.find((b) => b.id === id); if (!gone) return { put: [], remove: [] };
+  const pile = pileOf(list, caseIdOf(id)), at = pile.findIndex((b) => b.id === id);
+  return { put: pile.slice(at + 1).map((b, i) => ({ ...b, pile: at + i })), remove: [id] };
+}
+
+/**
+ * « Annuler » des retraits : remet les bouteilles retirées à leur ancien rang et fait remonter celles qui y sont
+ * maintenant (y compris une bouteille ajoutée entre-temps, qui reste dans la case, au-dessus).
+ * @param {object[]} removed fiches telles qu'avant le retrait (avec leur ancien `pile`)
+ * @returns {object[]} fiches à réécrire
+ */
+export function undoRemoval(list, removed) {
+  const out = [];
+  for (const caseId of new Set(removed.map((b) => caseIdOf(b.id)))) {
+    const back = removed.filter((b) => caseIdOf(b.id) === caseId).sort(byPile);
+    const others = pileOf(list, caseId).filter((b) => !back.some((x) => x.id === b.id));
+    // Chaque bouteille retirée reprend son ancien rang ; les autres gardent leur ordre et comblent le reste.
+    let k = 0;
+    const result = [];
+    for (let rank = 0; rank < back.length + others.length; rank++) {
+      const wanted = back.find((b) => (b.pile ?? 0) === rank);
+      result.push(wanted || others[k++]);
+    }
+    result.forEach((b, i) => { if (b.pile !== i || back.includes(b)) out.push({ ...b, pile: i }); });
+  }
+  return out;
+}
+
+/** Remet les rangs d'une case à 0…n−1 (ordre conservé, égalités départagées par la date d'ajout). */
+export function normalizePile(list, caseId) {
+  return pileOf(list, caseId).map((b, i) => (b.pile === i ? null : { ...b, pile: i })).filter(Boolean);
+}
+
+/**
+ * Convertit les anciennes fiches de cases maçonnées (`K:c:r` avec une quantité) en une fiche par bouteille,
+ * empilées dans leur case. Les bouteilles qui ne tiennent pas restent dans l'ancienne fiche, marquée `aRanger`.
+ * @param {(k: string) => boolean} isCasesRack ce casier est-il en cases maçonnées ?
+ * @param {(caseId: string) => number} capacityOf nombre de places de la case
+ * @returns {{ put: object[], remove: string[] }}
+ */
+export function migrateCaseRecords(list, isCasesRack, capacityOf, rand = Math.random) {
+  const put = [], remove = [], work = [...list];
+  for (const old of list) {
+    if (!old || old.vide || parseId(old.id).u || !isCasesRack(parseId(old.id).k)) continue;
+    const caseId = old.id, q = qty(old), free = Math.max(0, capacityOf(caseId) - pileOf(work, caseId).length), n = Math.min(q, free);
+    const { quantite, aRanger, ...wine } = old;
+    for (let i = 0; i < n; i++) {
+      const b = { ...wine, id: newBottleId(caseId, rand) + i.toString(36), pile: pileOf(work, caseId).length };
+      put.push(b); work.push(b);
+    }
+    if (n === q) remove.push(old.id); else put.push({ ...old, quantite: q - n, aRanger: true });
+  }
+  return { put, remove };
 }
