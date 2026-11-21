@@ -1,5 +1,5 @@
 import * as THREE from './vendor/three.module.min.js';
-import { esc, clamp, norm, RACK_ORDER, RACK_NAMES, slotId, parseId, isValidId, DEFAULT_CONFIG, CONFIG_REV, STYLES, rackGrid, casePlaces, pileOf, BOTTLE_D, DEFAULT_STYLE, rackLimits, normalizeConfig, rackSizes, rackSize, meters, recordsIn, isNewerVersion, LEGACY_CONFIG, needsLegacyConfig, realRecordCount, shouldResetDemoToVerdelot, cellLayout, drinkSoon, qty, totalBottles, suggestions, findKnownWine, inheritableFields } from './lib.js';
+import { esc, clamp, norm, RACK_ORDER, RACK_NAMES, slotId, parseId, isValidId, DEFAULT_CONFIG, CONFIG_REV, STYLES, rackGrid, casePlaces, pileOf, BOTTLE_D, caseIdOf, newBottleId, pushToPile, removeFromPile, undoRemoval, normalizePile, migrateCaseRecords, DEFAULT_STYLE, rackLimits, normalizeConfig, rackSizes, rackSize, meters, recordsIn, isNewerVersion, LEGACY_CONFIG, needsLegacyConfig, realRecordCount, shouldResetDemoToVerdelot, cellLayout, drinkSoon, qty, totalBottles, suggestions, findKnownWine, inheritableFields } from './lib.js';
 import { openStore } from './db.js';
 import { getApiKey, setApiKey, clearApiKey, cleanApiKey, scanLabel, testApiKey, scanErrorMessage } from './scan.js';
 
@@ -71,12 +71,63 @@ const saved = (msg) => toast(store ? msg : 'Gardé jusqu\'à la fermeture de l\'
 async function saveRecord(b) { const ok = await persist((s) => s.put(b)); if (ok) records.set(b.id, b); return ok; }
 /** Supprime une fiche : d'abord sur l'appareil, puis en mémoire. */
 async function deleteRecord(id) { const ok = await persist((s) => s.remove(id)); if (ok) records.delete(id); return ok; }
+/** Écrit et supprime plusieurs fiches dans UNE transaction, puis met la mémoire à jour (tout ou rien). */
+async function persistBatch(puts, removes) {
+  const ok = await persist((s) => s.batch(puts, removes));
+  if (ok) { for (const id of removes) records.delete(id); for (const b of puts) records.set(b.id, b); }
+  return ok;
+}
+
+// ---------- Cases maçonnées : chaque case est une pile de bouteilles, une fiche par bouteille ----------
+// On ajoute toujours en haut de la pile ; une bouteille retirée fait descendre celles du dessus (voir lib.js).
+const isCasesRack = (k) => rk[k]?.style === 'cases';
+/** Nombre de places d'une case, selon sa taille actuelle (0 si la case n'existe plus). */
+function capacityOf(caseId) { const { k, c, r } = parseId(caseId); return inRack(k, c, r) && racks[k].isCases ? racks[k].places[c][r].length : 0; }
+/** Champs qui décrivent le vin (copiés d'une bouteille à l'autre). */
+const WINE_FIELDS = ['nom', 'couleur', 'millesime', 'apogee', 'appellation', 'region', 'cepage', 'prix', 'note', 'commentaire', 'photo'];
+const wineOf = (b) => Object.fromEntries(WINE_FIELDS.filter((f) => b[f] !== undefined).map((f) => [f, b[f]]));
+/**
+ * Ajoute `n` bouteilles du vin `wine` en haut de la pile d'une case. Rien n'est écrit s'il manque de la place.
+ * @returns {Promise<object[]|null>} les fiches créées, ou null
+ */
+async function addToCase(caseId, wine, n, extra = {}) {
+  let ranks;
+  try { ranks = pushToPile(allBottles(), caseId, n, capacityOf(caseId)); } catch (e) {
+    if (!(e instanceof RangeError)) throw e;
+    toast(e.cause ? `Il ne reste que ${e.cause} place${e.cause > 1 ? 's' : ''} dans cette case` : 'Cette case est pleine');
+    return null;
+  }
+  const now = Date.now(), base = newBottleId(caseId);
+  const list = ranks.map((pile, i) => ({ ...wineOf(wine), ...extra, id: base + i.toString(36), pile, ajout: now }));
+  return await persistBatch(list, []) ? list : null;
+}
+/**
+ * Retire des bouteilles de case : leurs fiches sont supprimées et celles du dessus descendent, le tout dans une
+ * seule transaction. Propose « Annuler » (sauf `undo: false`, pour l'ancienne place d'un déplacement).
+ */
+async function removeBottles(ids, label, { undo = true } = {}) {
+  let work = allBottles(); const puts = new Map(), removed = [];
+  for (const id of ids) {
+    if (!work.some((x) => x.id === id)) continue;
+    removed.push(records.get(id));
+    const { put, remove } = removeFromPile(work, id);
+    for (const p of put) puts.set(p.id, p);
+    for (const r of remove) puts.delete(r);
+    work = work.filter((x) => !remove.includes(x.id)).map((x) => puts.get(x.id) || x);
+  }
+  if (!removed.length) return true;
+  if (!await persistBatch([...puts.values()], removed.map((b) => b.id))) return false;
+  refresh(); if (undo) offerUndo(label, removed);
+  return true;
+}
 
 /** Type de rangement d'un casier (alvéoles, cases maçonnées…). */
 const styleOf = (k) => STYLES[rk[k]?.style] || STYLES[DEFAULT_STYLE];
 function locText(id) {
-  const { k, c, r } = parseId(id);
-  return `<b>${RACK_NAMES[k] || k}</b> · ${styleOf(k).lieu} en colonne <b>${c + 1}</b> depuis l'entrée · rangée <b>${r + 1}</b> depuis le bas`;
+  const { k, c, r, u } = parseId(id), b = u && records.get(id);
+  // Bouteille de case maçonnée : on dit aussi où elle est dans la pile (comptée depuis le coin en bas à droite)
+  const inPile = b ? ` · <b>${(b.pile ?? 0) + 1}<sup>e</sup></b> bouteille en partant du coin en bas à droite` : '';
+  return `<b>${RACK_NAMES[k] || k}</b> · ${styleOf(k).lieu} en colonne <b>${c + 1}</b> depuis l'entrée · rangée <b>${r + 1}</b> depuis le bas${inPile}`;
 }
 function locShort(id) {
   const { k, c, r } = parseId(id);
@@ -527,12 +578,13 @@ function drawLabel(b) {
 let heroAnim = null;
 // b = fiche de la bouteille, ou null pour une bouteille non enregistrée (sans étiquette)
 function presentBottle(b, key, c, r) {
-  const id = slotId(key, c, r);
+  const inPile = b && parseId(b.id).u, id = inPile ? b.id : slotId(key, c, r);
   heroGlassMat.color.setHex(b ? typeOf(b).verre : UNKNOWN_GLASS);
   heroCapMat.color.setHex(b ? typeOf(b).capsule : 0x1d1f23);
   heroLabel.visible = !!b; if (b) drawLabel(b);
   computeGoal();
-  const n = racks[key].normal, s = slotWorld(key, c, r);
+  const pos = inPile && bottleLocal(b);   // bouteille de case : elle sort de sa place dans la pile
+  const n = racks[key].normal, s = pos ? racks[key].group.localToWorld(new THREE.Vector3(pos[0], pos[1], 0)) : slotWorld(key, c, r);
   const m = new THREE.Matrix4().lookAt(goalPos, goalTgt, camera.up), camQ = new THREE.Quaternion().setFromRotationMatrix(m);
   const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(camQ), up = new THREE.Vector3(0, 1, 0).applyQuaternion(camQ);
   const dh = Math.min(2.2, view.d * 0.5), scale = 1.55 * dh / 2.2;
@@ -624,9 +676,9 @@ let mode = null;       // { type: 'copy' | 'move', source: fiche }
 let draftPhoto = null;
 
 // Demande de confirmation affichée dans l'application (les fenêtres du navigateur sont parfois bloquées)
-function ask(message, okLabel = 'Continuer') {
+function ask(message, okLabel = 'Continuer', cancelLabel = 'Annuler') {
   return new Promise((res) => {
-    $('dialogText').textContent = message; $('dialogOk').textContent = okLabel; $('dialog').hidden = false;
+    $('dialogText').textContent = message; $('dialogOk').textContent = okLabel; $('dialogCancel').textContent = cancelLabel; $('dialog').hidden = false;
     const done = (v) => { $('dialog').hidden = true; $('dialogOk').onclick = $('dialogCancel').onclick = null; res(v); };
     $('dialogOk').onclick = () => done(true); $('dialogCancel').onclick = () => done(false);
   });
@@ -642,20 +694,35 @@ async function onTap(cx, cy) {
 /** Touche sur un emplacement : en mode « copie/déplacement », range la fiche ici ; sinon ouvre l'emplacement. */
 let slotBusy = false;   // évite qu'un double toucher rapide range la même bouteille à deux endroits
 async function tapSlot(hit) {
-  const id = slotId(hit.key, hit.c, hit.r);
-  if (!mode) return selectSlot(hit.key, hit.c, hit.r);
+  const id = slotId(hit.key, hit.c, hit.r), inCases = racks[hit.key]?.isCases;
+  if (!mode) return inCases ? (hit.id ? selectBottle(hit.id) : showCase(id)) : selectSlot(hit.key, hit.c, hit.r);
   if (slotBusy) return;
   slotBusy = true;
   try {
-    if (bottleAt(id)) return toast('Il y a déjà une bouteille enregistrée ici');
     // On repart de la fiche actuelle : elle a pu être modifiée ou retirée depuis le début du mode.
     const src = bottleAt(mode.source.id);
     if (!src) { endMode(); return toast('Cette bouteille n\'est plus dans la cave'); }
+    // Libère l'ancienne place d'un déplacement (dans une case : celles du dessus descendent)
+    const freeSource = () => (parseId(src.id).u ? removeBottles([src.id], '', { undo: false }) : deleteRecord(src.id));
+    if (inCases) {   // case maçonnée : la bouteille va en haut de la pile
+      if (mode.type === 'move' && caseIdOf(src.id) === id) return toast('Cette bouteille est déjà dans cette case');
+      const n = mode.type === 'copy' ? qty(mode.source) : qty(src);
+      const added = await addToCase(id, src, n); if (!added) return;   // nouvelle place enregistrée AVANT de libérer l'ancienne
+      if (mode.type === 'move') {
+        if (!await freeSource()) {
+          const undone = await persistBatch([], added.map((b) => b.id));
+          return toast(undone ? 'Déplacement impossible : rien n\'a changé' : 'Déplacement incomplet : la bouteille est maintenant aux deux places, retirez-en une');
+        }
+        endMode(); refresh(); selectBottle(added[0].id); saved('Bouteille déplacée');
+      } else { mode.added += n; updateBanner(); refresh(); saved(n > 1 ? `${n} bouteilles ajoutées dans cette case` : 'Enregistrée ici aussi'); }
+      return;
+    }
+    if (bottleAt(id)) return toast('Il y a déjà une bouteille enregistrée ici');
     const copy = { ...src, quantite: mode.type === 'copy' ? qty(mode.source) : src.quantite, id, ajout: Date.now() };
-    delete copy.demo;                                       // une fiche rangée par l'utilisateur n'est plus une bouteille d'exemple
+    delete copy.demo; delete copy.pile;                     // une fiche rangée par l'utilisateur n'est plus une bouteille d'exemple
     if (!await saveRecord(copy)) return;                    // on enregistre la nouvelle place AVANT de libérer l'ancienne
     if (mode.type === 'move') {
-      if (!await deleteRecord(src.id)) {                    // l'ancienne place n'a pas pu être libérée : retour arrière
+      if (!await freeSource()) {                            // l'ancienne place n'a pas pu être libérée : retour arrière
         const undone = await deleteRecord(id);
         return toast(undone ? 'Déplacement impossible : rien n\'a changé' : 'Déplacement incomplet : la bouteille est maintenant aux deux places, retirez-en une');
       }
@@ -667,6 +734,7 @@ function refresh() { rebuildBottles(); if ($('search').value.trim()) runSearch(f
 
 function selectSlot(key, c, r) {
   if (!inRack(key, c, r)) return toast('Cet emplacement n\'existe plus avec les dimensions actuelles');
+  if (racks[key].isCases) return showCase(slotId(key, c, r));   // une case maçonnée s'ouvre sur son contenu
   hideHero();
   const id = slotId(key, c, r); selected = { key, c, r, id }; lastSlot = selected;
   focusSlot(key, c, r);
@@ -675,6 +743,51 @@ function selectSlot(key, c, r) {
   const b = bottleAt(id);
   presentBottle(b, key, c, r);
   if (b) showCard(b); else showUnknown(id);
+}
+/** Bouteille d'une case maçonnée : anneau autour d'elle, elle sort de la pile, sa fiche s'ouvre. */
+function selectBottle(id) {
+  const b = bottleAt(id); if (!b) return;
+  const { k, c, r } = parseId(id), pos = bottleLocal(b);
+  if (!pos) return showCase(caseIdOf(id));   // hors des dimensions actuelles : on montre au moins la case
+  hideHero();
+  selected = { key: k, c, r, id, caseId: caseIdOf(id) }; lastSlot = selected;
+  focusSlot(k, c, r);
+  racks[k].group.localToWorld(selRing.position.set(pos[0], pos[1], 0)).addScaledVector(racks[k].normal, BOTTLE_OUT + 0.005);
+  selRing.quaternion.copy(racks[k].group.quaternion); selRing.scale.setScalar(BOTTLE_D / 0.18); selRing.visible = true;
+  presentBottle(b, k, c, r);
+  showCard(b);
+}
+/**
+ * Fiche « Case » : contenu de la case groupé par vin, places libres, « Ajouter des bouteilles », « Vider cette case ».
+ * @param {string[]|null} hl bouteilles à allumer (ligne de liste ou de recherche touchée)
+ */
+function showCase(caseId, hl = null) {
+  const { k, c, r } = parseId(caseId);
+  if (!inRack(k, c, r)) return toast('Cet emplacement n\'existe plus avec les dimensions actuelles');
+  hideHero(); selRing.visible = false;
+  selected = { key: k, c, r, id: caseId, caseId }; lastSlot = selected;
+  focusSlot(k, c, r);
+  if (hl) { highlighted = hl; rebuildRings(); }
+  const pile = pileOf(allBottles(), caseId), cap = capacityOf(caseId), groups = new Map();
+  for (const b of pile) { const g = `${norm(b.nom)}|${b.millesime || ''}`; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(b); }
+  const lost = bottleAt(caseId);   // ancienne fiche restée « à ranger » faute de place
+  openSheet(`${RACK_NAMES[k]} · colonne ${c + 1} · rangée ${r + 1}`, `
+    <div class="list">${[...groups.values()].map((g) => `<button class="row" data-hl="${g.map((b) => b.id).join(',')}"><span class="dot" style="background:${typeOf(g[0]).css}"></span>
+      <span class="main"><div class="n">${esc(g[0].nom || 'Sans nom')}</div><div class="s">${esc(g[0].appellation || '')}</div></span>
+      <span class="y">${esc(g[0].millesime || '')} <small>×${g.length}</small></span></button>`).join('') || '<div class="empty">Cette case est vide.</div>'}</div>
+    ${lost ? `<p class="help">À ranger : ${qty(lost)} × ${esc(lost.nom || 'Sans nom')} (plus de place dans cette case).</p>` : ''}
+    <p class="help">${pile.length} bouteille${pile.length > 1 ? 's' : ''} · ${Math.max(0, cap - pile.length)} place${cap - pile.length > 1 ? 's' : ''} libre${cap - pile.length > 1 ? 's' : ''}.${pile.length ? ' Touchez une bouteille dans la case pour voir sa fiche, ou une ligne pour la repérer.' : ''}</p>
+    <div class="btns"><button class="btn primary block" data-act="add">Ajouter des bouteilles</button>
+      ${pile.length ? '<button class="btn danger block" data-act="clear-case">Vider cette case</button>' : ''}</div>`);
+}
+/** Ouvre ce qu'une ligne de liste désigne : la bouteille, la case (avec ces bouteilles allumées) ou l'emplacement. */
+function goTo(id, ids = '') {
+  const { k, c, r, u } = parseId(id);
+  if (racks[k]?.isCases) {
+    const list = ids ? ids.split(',') : [id];
+    return u && list.length === 1 ? selectBottle(id) : showCase(caseIdOf(id), list);
+  }
+  selectSlot(k, c, r);
 }
 
 // ---------- Fiche (panneau du bas) ----------
@@ -723,13 +836,15 @@ function showCard(b) {
  */
 function showForm(id, draft = null) {
   scanToken++;
-  const st = styleOf(parseId(id).k), existing = bottleAt(id), b = draft ?? existing ?? { couleur: 'rouge', quantite: st.defaut };
+  const { k: fk, u: fu } = parseId(id), inCase = isCasesRack(fk), st = styleOf(fk);
+  // Dans une case maçonnée, `id` est soit une bouteille (modification), soit la case (ajout de bouteilles, 1 par défaut)
+  const existing = inCase && !fu ? null : bottleAt(id), b = draft ?? existing ?? { couleur: 'rouge', quantite: inCase ? 1 : st.defaut };
   draftPhoto = b.photo || null;
   const v = (k) => esc(b[k] ?? ''), hasKey = !!getApiKey();
   const known = allBottles().filter((x) => x.id !== id);
   // Suggestions de saisie : valeurs déjà utilisées dans les autres fiches
   const options = (field) => suggestions(known, field).slice(0, 200).map((x) => `<option value="${esc(x)}"></option>`).join('');
-  openSheet(existing ? 'Modifier la fiche' : 'Nouvelle fiche', `
+  openSheet(existing ? 'Modifier la fiche' : inCase ? 'Ajouter des bouteilles' : 'Nouvelle fiche', `
     <form id="form" data-id="${id}" autocomplete="off">
       <div class="loc">${locText(id)}</div>
       <div class="field">Étiquette
@@ -744,7 +859,7 @@ function showForm(id, draft = null) {
         <div class="chips" id="chips">${Object.entries(TYPES).map(([k, t]) =>
           `<button type="button" class="chip${(b.couleur || 'rouge') === k ? ' on' : ''}" data-couleur="${k}"><span class="dot" style="background:${t.css}"></span>${t.nom}</button>`).join('')}</div>
       </div>
-      ${st.unique ? '<input type="hidden" name="quantite" value="1">' /* casier métallique : une seule bouteille par place */ : `<div class="field">Nombre de bouteilles dans cette ${st.lieu}
+      ${st.unique || (inCase && fu) ? '<input type="hidden" name="quantite" value="1">' /* une seule bouteille : place de casier métallique, ou bouteille d'une case */ : `<div class="field">${inCase ? 'Nombre de bouteilles à ajouter (en haut de la pile)' : `Nombre de bouteilles dans cette ${st.lieu}`}
         <div class="stepper">
           <button type="button" class="btn" data-step="-1" aria-label="Une bouteille de moins">−</button>
           <input name="quantite" value="${qty(b)}" inputmode="numeric" pattern="[0-9]*" maxlength="2" aria-label="Nombre de bouteilles">
@@ -789,7 +904,9 @@ function redrawForm(d) {
   showForm($('form').dataset.id, { ...d, photo: draftPhoto });
   $('sheetBody').scrollTop = scroll;
 }
-const reselect = () => selected ? selectSlot(selected.key, selected.c, selected.r) : closeSheet();
+const reselect = () => !selected ? closeSheet()
+  : selected.caseId ? (parseId(selected.id).u && bottleAt(selected.id) ? selectBottle(selected.id) : showCase(selected.caseId))
+  : selectSlot(selected.key, selected.c, selected.r);
 const setChip = (couleur) => $('chips')?.querySelectorAll('.chip').forEach((c) => c.classList.toggle('on', c.dataset.couleur === couleur));
 
 /**
@@ -883,7 +1000,9 @@ $('sheetBody').addEventListener('click', async (e) => {
   const step = e.target.closest('[data-step]');
   if (step) { const el = $('form').elements.quantite; el.value = clamp(qty({ quantite: el.value }) + (+step.dataset.step), 1, 99); return; }
   const row = e.target.closest('[data-goto]');
-  if (row) { const { k, c, r } = parseId(row.dataset.goto); selectSlot(k, c, r); return; }
+  if (row) { goTo(row.dataset.goto, row.dataset.ids); return; }
+  const hl = e.target.closest('[data-hl]');   // fiche Case : allumer les bouteilles d'un vin
+  if (hl) { highlighted = hl.dataset.hl.split(','); rebuildRings(); return; }
   const act = e.target.closest('[data-act]')?.dataset.act; if (!act) return;
   const id = selected?.id, b = id && bottleAt(id);
   if (['add', 'edit', 'remove', 'drink', 'copy', 'move'].includes(act) && (!id || (act !== 'add' && !b))) return closeSheet();
@@ -892,6 +1011,15 @@ $('sheetBody').addEventListener('click', async (e) => {
   else if (act === 'photo') $('photoInput').click();
   else if (act === 'nophoto') { const d = formDraft(); draftPhoto = null; redrawForm(d); }
   else if (act === 'scan') runScan();
+  else if ((act === 'drink' || act === 'remove') && parseId(id).u) {   // bouteille de case : celles du dessus descendent
+    if (!await ask(`Retirer « ${b.nom} » de la cave ? Sa fiche sera supprimée, et les bouteilles posées dessus descendront d'une place.`, 'Retirer')) return;
+    if (await removeBottles([id], 'Bouteille retirée')) showCase(caseIdOf(id));
+  }
+  else if (act === 'clear-case') {
+    const caseId = selected?.caseId, pile = caseId ? pileOf(allBottles(), caseId) : []; if (!pile.length) return;
+    if (!await ask(`Vider cette case ? ${pile.length} bouteille${pile.length > 1 ? 's seront retirées' : ' sera retirée'} de la cave.`, 'Vider')) return;
+    if (await removeBottles(pile.map((b) => b.id).reverse(), 'Case vidée')) showCase(caseId);
+  }
   else if (act === 'drink' && qty(b) > 1) { const after = { ...b, quantite: qty(b) - 1 }; if (await saveRecord(after)) { refresh(); reselect(); offerUndo('Une bouteille de moins', [b], [after]); } }
   else if (act === 'drink' || act === 'remove') {
     if (!await ask(`Retirer « ${b.nom} » de la cave ? Sa fiche sera supprimée.`)) return;
@@ -950,6 +1078,7 @@ $('sheetBody').addEventListener('submit', async (e) => {
     const { _touched, ...d } = formDraft();
     for (const k in d) d[k] = String(d[k]).trim();
     if (!d.nom) return toast('Indiquez au moins le nom');
+    if (isCasesRack(parseId(id).k)) { await submitCaseForm(id, d, more); return; }
     const rec = { ...old, ...d, quantite: qty(d), id, photo: draftPhoto, ajout: old?.ajout || Date.now() };
     delete rec.vide; delete rec.demo;   // une fiche modifiée par l'utilisateur n'est plus une bouteille d'exemple
     if (!await saveRecord(rec)) return;   // enregistré sur l'appareil avant de confirmer
@@ -964,6 +1093,31 @@ $('sheetBody').addEventListener('submit', async (e) => {
     location.reload();
   }
 });
+
+/**
+ * Formulaire dans une case maçonnée. Nouvelle saisie (`id` = la case) : N bouteilles en haut de la pile.
+ * Modification d'une bouteille : elle seule, ou aussi ses jumelles de la même case si l'utilisateur le veut.
+ */
+async function submitCaseForm(id, d, more) {
+  const wine = wineOf({ ...d, photo: draftPhoto });
+  if (!parseId(id).u) {
+    const n = qty(d), added = await addToCase(id, wine, n); if (!added) return;
+    refresh(); showCase(id, added.map((b) => b.id)); saved(n > 1 ? `${n} bouteilles ajoutées` : 'Bouteille ajoutée');
+    if (more) startMode('copy', added[0]);
+    return;
+  }
+  const old = bottleAt(id); if (!old) return closeSheet();
+  const rec = { ...old, ...wine, id, pile: old.pile }; delete rec.demo;   // modifiée par l'utilisateur : plus un exemple
+  const changed = WINE_FIELDS.filter((f) => (rec[f] ?? '') !== (old[f] ?? ''));
+  const twins = pileOf(allBottles(), caseIdOf(id)).filter((x) => x.id !== id && norm(x.nom) === norm(old.nom) && (x.millesime || '') === (old.millesime || ''));
+  let others = [];
+  if (changed.length && twins.length && await ask(`Appliquer aussi ces changements aux ${twins.length} autre${twins.length > 1 ? 's' : ''} bouteille${twins.length > 1 ? 's' : ''} identique${twins.length > 1 ? 's' : ''} (même vin, même millésime) de cette case ?`, 'Oui, à toutes', 'Non, celle-ci')) {
+    others = twins.map((x) => { const y = { ...x }; for (const f of changed) y[f] = rec[f]; delete y.demo; return y; });
+  }
+  if (!await persistBatch([rec, ...others], [])) return;   // enregistré sur l'appareil avant de confirmer
+  refresh(); selectBottle(id); saved(others.length ? `${others.length + 1} fiches enregistrées` : 'Fiche enregistrée');
+  if (more) startMode('copy', rec);
+}
 
 // Photo de l'étiquette : réduite, stockée dans la fiche, puis lue automatiquement si la lecture est activée
 $('photoInput').addEventListener('change', async (e) => {
@@ -1007,10 +1161,20 @@ $('banner').addEventListener('click', (e) => {
 // ---------- Recherche ----------
 function haystack(b) { return norm([b.nom, b.millesime, b.appellation, b.region, b.cepage, typeOf(b).nom, b.commentaire].join(' ')); }
 function sortBottles(a, b) { return norm(a.nom).localeCompare(norm(b.nom)) || String(a.millesime).localeCompare(String(b.millesime)) || a.id.localeCompare(b.id); }
-function rowHtml(b) {
-  return `<button class="row" data-goto="${b.id}"><span class="dot" style="background:${typeOf(b).css}"></span>
-    <span class="main"><div class="n">${esc(b.nom || 'Sans nom')}</div><div class="s">${esc(b.appellation ? b.appellation + ' — ' : '')}${locShort(b.id)}</div></span>
-    <span class="y">${esc(b.millesime || '')}${qty(b) > 1 ? ` <small>×${qty(b)}</small>` : ''}</span></button>`;
+/** Regroupe en une ligne (« × 6 ») les bouteilles identiques (même vin, même millésime) d'une même case maçonnée. */
+function groupRows(list) {
+  const out = [], seen = new Map();
+  for (const b of list) {
+    if (!parseId(b.id).u) { out.push({ b, ids: [b.id], n: qty(b) }); continue; }
+    const key = `${caseIdOf(b.id)}|${norm(b.nom)}|${b.millesime || ''}`, g = seen.get(key);
+    if (g) { g.ids.push(b.id); g.n++; } else { const ng = { b, ids: [b.id], n: 1 }; seen.set(key, ng); out.push(ng); }
+  }
+  return out;
+}
+function rowHtml({ b, ids, n }) {
+  return `<button class="row" data-goto="${b.id}" data-ids="${ids.join(',')}"><span class="dot" style="background:${typeOf(b).css}"></span>
+    <span class="main"><div class="n">${esc(b.nom || 'Sans nom')}</div><div class="s">${esc(b.appellation ? b.appellation + ' — ' : '')}${locShort(b.id)}${b.aRanger ? ' · <b>à ranger</b>' : ''}</div></span>
+    <span class="y">${esc(b.millesime || '')}${n > 1 ? ` <small>×${n}</small>` : ''}</span></button>`;
 }
 function runSearch(show = true) {
   const q = norm($('search').value.trim()); $('searchClear').hidden = !q;
@@ -1019,7 +1183,8 @@ function runSearch(show = true) {
   const found = allBottles().filter((b) => { const h = haystack(b); return words.every((w) => h.includes(w)); }).sort(sortBottles);
   highlighted = found.map((b) => b.id); rebuildRings();
   if (!show) return;
-  $('results').innerHTML = found.length ? found.slice(0, 80).map(rowHtml).join('') + (found.length > 80 ? `<div class="empty">… et ${found.length - 80} autres</div>` : '')
+  const rows = groupRows(found);
+  $('results').innerHTML = rows.length ? rows.slice(0, 80).map(rowHtml).join('') + (rows.length > 80 ? `<div class="empty">… et ${rows.length - 80} autres</div>` : '')
     : '<div class="empty">Aucune bouteille enregistrée ne correspond</div>';
   $('results').hidden = false; $('sheet').hidden = true; hideHero();
 }
@@ -1030,7 +1195,7 @@ $('searchClear').onclick = () => { $('search').value = ''; runSearch(); };
 $('results').addEventListener('click', (e) => {
   const row = e.target.closest('[data-goto]'); if (!row) return;
   $('search').blur(); $('results').hidden = true;
-  const { k, c, r } = parseId(row.dataset.goto); selectSlot(k, c, r);
+  goTo(row.dataset.goto, row.dataset.ids);
 });
 
 // ---------- Barre du bas : choisir la vue ----------
@@ -1070,7 +1235,7 @@ function showInventory(filter = '') {
   openSheet(`Mes bouteilles (${totalBottles(shown)})`, `
     <div class="stats">${Object.entries(TYPES).filter(([k]) => by[k]).map(([k, t]) => `<button class="stat${filter === k ? ' on' : ''}" data-act="inv-filter" data-color="${filter === k ? '' : k}"><b>${by[k]}</b><span>${t.nom}</span></button>`).join('')}</div>
     ${filter ? `<p class="help">Filtre : ${TYPES[filter].nom}. Touchez-le à nouveau pour tout afficher.</p>` : ''}
-    <div class="list">${shown.length ? shown.map(rowHtml).join('') : '<div class="empty">Aucune bouteille enregistrée pour l\'instant. Ouvrez un casier et touchez une bouteille pour créer sa fiche.</div>'}</div>
+    <div class="list">${shown.length ? groupRows(shown).map(rowHtml).join('') : '<div class="empty">Aucune bouteille enregistrée pour l\'instant. Ouvrez un casier et touchez une bouteille pour créer sa fiche.</div>'}</div>
     <div class="btns"><button class="btn block" data-act="menu">Retour</button></div>`, true);
 }
 /** Réglage du rangement : pour chaque casier, type de rangement, colonnes et rangées. */
@@ -1202,10 +1367,13 @@ $('undoBtn').onclick = async () => {
   const st = undoState; hideUndo(); if (!st) return;
   // Pour chaque emplacement, on remet la version la plus ancienne (avant la première suppression)
   const first = new Map(); for (const b of st.previous) if (!first.has(b.id)) first.set(b.id, b);
-  const ok = [...first.values()].filter((b) => { const now = records.get(b.id); return !now || st.after.some((a) => a === now); });
-  if (ok.length < first.size) toast('Certains emplacements ont été réutilisés entre-temps : ils sont gardés tels quels');
-  if (!ok.length || !await persist((s2) => s2.putMany(ok))) return;
-  for (const b of ok) records.set(b.id, b);
+  // Bouteilles de cases : elles reprennent leur rang, et celles posées dessus entre-temps remontent (lib.js)
+  const inPiles = [...first.values()].filter((b) => parseId(b.id).u && !records.has(b.id));
+  const others = [...first.values()].filter((b) => !parseId(b.id).u);
+  const ok = others.filter((b) => { const now = records.get(b.id); return !now || st.after.some((a) => a === now); });
+  if (ok.length < others.length) toast('Certains emplacements ont été réutilisés entre-temps : ils sont gardés tels quels');
+  const back = [...ok, ...undoRemoval(allBottles(), inPiles)];
+  if (!back.length || !await persistBatch(back, [])) return;
   refresh(); if (selected) reselect(); saved('Annulé : bouteilles remises en place');
 };
 
@@ -1298,7 +1466,7 @@ function showSoon() {
   const year = new Date().getFullYear(), list = drinkSoon(allBottles(), year);
   openSheet(`À boire bientôt (${totalBottles(list)})`, `
     <p class="help">Bouteilles dont la date « à boire jusqu'en » est ${year + 1} ou avant.</p>
-    <div class="list">${list.length ? list.map(rowHtml).join('') : '<div class="empty">Rien d\'urgent. Pensez à remplir « À boire jusqu\'en » dans les fiches.</div>'}</div>
+    <div class="list">${list.length ? groupRows(list).map(rowHtml).join('') : '<div class="empty">Rien d\'urgent. Pensez à remplir « À boire jusqu\'en » dans les fiches.</div>'}</div>
     <div class="btns"><button class="btn block" data-act="menu">Retour</button></div>`, true);
 }
 function showInstall() {
@@ -1347,6 +1515,18 @@ async function seedDemo() {
   const list = [];
   for (const k of RACK_ORDER) {
     const st = styleOf(k);
+    if (racks[k].isCases) {   // cases maçonnées : des piles de 1 à 20 bouteilles, par séries d'un même vin
+      for (let c = 0; c < racks[k].cols; c++) for (let r = 0; r < racks[k].rows; r++) {
+        if (Math.random() > 0.7) continue;
+        const caseId = slotId(k, c, r), have = pileOf([...records.values(), ...list], caseId).length, base = newBottleId(caseId);
+        const n = Math.min(capacityOf(caseId) - have, 1 + Math.floor(Math.random() * 20));
+        for (let i = 0; i < n;) {
+          const w = DEMO[Math.floor(Math.random() * DEMO.length)], run = 1 + Math.floor(Math.random() * 6), year = String(1998 + Math.floor(Math.random() * 25));
+          for (let j = 0; j < run && i < n; j++, i++) list.push({ id: base + i.toString(36), pile: have + i, nom: w[0], appellation: w[1], region: w[2], couleur: w[3], millesime: year, apogee: String(2024 + Math.floor(Math.random() * 12)), demo: true, ajout: Date.now() });
+        }
+      }
+      continue;
+    }
     for (let c = 0; c < racks[k].cols; c++) for (let r = 0; r < racks[k].rows; r++) {
       const id = slotId(k, c, r); if (records.has(id) || Math.random() > 0.6) continue;
       const w = DEMO[Math.floor(Math.random() * DEMO.length)];
@@ -1358,10 +1538,32 @@ async function seedDemo() {
 }
 /** Retire les bouteilles d'exemple (jamais les vraies fiches) ; renvoie les fiches retirées, pour « Annuler ». */
 async function clearDemo() {
-  const list = [...records.values()].filter((b) => b.demo), ids = list.map((b) => b.id);
-  if (!await persist((st) => st.removeMany(ids))) return [];
-  for (const id of ids) records.delete(id);
+  const list = [...records.values()].filter((b) => b.demo), ids = new Set(list.map((b) => b.id));
+  // Une vraie bouteille posée sur des exemples descend : la pile reste sans trou (même transaction)
+  const left = allBottles().filter((b) => !ids.has(b.id)), fixes = [];
+  for (const caseId of new Set(list.filter((b) => parseId(b.id).u).map((b) => caseIdOf(b.id)))) fixes.push(...normalizePile(left, caseId));
+  if (!await persistBatch(fixes, [...ids])) return [];
   return list;
+}
+/**
+ * Passage aux cases en pile (0.4.0). Appareil de test (seulement des exemples) : exemples régénérés au nouveau
+ * format. Sinon, les anciennes fiches de cases maçonnées sont converties (une fiche par bouteille) et les rangs
+ * de chaque pile remis en ordre. Rien n'est perdu : ce qui ne tient pas reste « à ranger ».
+ */
+async function upgradeCases() {
+  let regenerated = true; try { regenerated = !!localStorage.getItem('cave-demo-v4'); } catch { /* stockage bloqué */ }
+  const all = [...records.values()];
+  if (!regenerated && all.length && !realRecordCount(all)) {
+    try { localStorage.setItem('cave-demo-v4', '1'); } catch { return; }
+    if (await persistBatch([], all.map((b) => b.id))) await seedDemo();
+    return;
+  }
+  const mig = migrateCaseRecords(allBottles(), isCasesRack, capacityOf);
+  if (mig.put.length || mig.remove.length) await persistBatch(mig.put, mig.remove);
+  const fixes = [];
+  for (const caseId of new Set(allBottles().filter((b) => parseId(b.id).u).map((b) => caseIdOf(b.id)))) fixes.push(...normalizePile(allBottles(), caseId));
+  if (fixes.length) await persistBatch(fixes, []);
+  try { localStorage.setItem('cave-demo-v4', '1'); } catch { /* stockage bloqué */ }
 }
 
 document.addEventListener('gesturestart', (e) => e.preventDefault());
@@ -1411,8 +1613,9 @@ if (new URLSearchParams(location.search).has('debug')) window.__cave = { tapSlot
     // (avec des fiches, mais toujours sans réglage) croirait à un appareil de la 0.2.0.
     try { localStorage.setItem(CONFIG_KEY, JSON.stringify(config)); } catch { /* stockage bloqué : rien à faire */ }
   }
+  if (store && records.size) await upgradeCases().catch(console.error);
   let demoDone = true; try { demoDone = !!localStorage.getItem('cave-demo'); } catch { /* stockage bloqué */ }
-  if (store && !records.size && !demoDone) { try { localStorage.setItem('cave-demo', '1'); } catch { /* idem */ } await seedDemo().catch(console.error); }
+  if (store && !records.size && !demoDone) { try { localStorage.setItem('cave-demo', '1'); localStorage.setItem('cave-demo-v4', '1'); } catch { /* idem */ } await seedDemo().catch(console.error); }
   rebuildBottles(); applyVisibility(); requestAnimationFrame(frame);
   let welcomed = false; try { welcomed = !!localStorage.getItem('cave-bienvenue'); } catch { /* stockage bloqué */ }
   if (!welcomed) showWelcome();
