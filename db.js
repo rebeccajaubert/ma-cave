@@ -38,6 +38,12 @@ export async function openStore() {
     remove: (id) => run('readwrite', (s) => s.delete(id)),
     /** Supprime plusieurs fiches en une seule transaction. */
     removeMany: (ids) => run('readwrite', (s) => { for (const id of ids) s.delete(id); }),
+    /**
+     * Supprime et écrit plusieurs fiches dans UNE transaction : tout est enregistré, ou rien.
+     * Sert au retrait d'une bouteille de case : sa suppression et la descente de celles du dessus ne doivent
+     * jamais être écrites à moitié (sinon un trou ou deux bouteilles au même rang dans la pile).
+     */
+    batch: (puts, removeIds) => run('readwrite', (s) => { for (const id of removeIds) s.delete(id); for (const b of puts) s.put(b); }),
     /** Remplace tout le contenu (restauration d'une sauvegarde). */
     replaceAll: (list) => run('readwrite', (s) => { s.clear(); for (const b of list) s.put(b); }),
   };
