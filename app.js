@@ -1,5 +1,5 @@
 import * as THREE from './vendor/three.module.min.js';
-import { esc, clamp, norm, RACK_ORDER, RACK_NAMES, slotId, parseId, isValidId, DEFAULT_CONFIG, CONFIG_REV, STYLES, rackGrid, casePlaces, pileOf, BOTTLE_D, caseIdOf, newBottleId, pushToPile, removeFromPile, undoRemoval, normalizePile, migrateCaseRecords, DEFAULT_STYLE, rackLimits, normalizeConfig, rackSizes, rackSize, meters, recordsIn, isNewerVersion, LEGACY_CONFIG, needsLegacyConfig, realRecordCount, shouldResetDemoToVerdelot, cellLayout, drinkSoon, qty, totalBottles, suggestions, findKnownWine, inheritableFields } from './lib.js';
+import { esc, clamp, norm, RACK_ORDER, RACK_NAMES, slotId, parseId, isValidId, DEFAULT_CONFIG, CONFIG_REV, STYLES, rackGrid, casePlaces, pileOf, BOTTLE_D, moveSeparator, caseIdOf, newBottleId, pushToPile, removeFromPile, undoRemoval, normalizePile, migrateCaseRecords, DEFAULT_STYLE, rackLimits, normalizeConfig, rackSizes, rackSize, meters, recordsIn, isNewerVersion, LEGACY_CONFIG, needsLegacyConfig, realRecordCount, shouldResetDemoToVerdelot, cellLayout, drinkSoon, qty, totalBottles, suggestions, findKnownWine, inheritableFields } from './lib.js';
 import { openStore } from './db.js';
 import { getApiKey, setApiKey, clearApiKey, cleanApiKey, scanLabel, testApiKey, scanErrorMessage } from './scan.js';
 
@@ -341,6 +341,7 @@ function buildFacade(rack) {
   for (const m of [rack.facade, rack.glass, rack.rings]) if (m) { group.remove(m); m.traverse?.((o) => o.geometry?.dispose()); }
   rack.facade = null;
   computePlaces(rack);
+  rack.seps = [];
   if (rack.isCases) {
     const g = new THREE.Group(), tex = cellTexture('cases'), { colW, rowH, rowY } = rack.grid;
     for (let c = 0; c < cols; c++) for (let r = 0; r < rows; r++) {
@@ -351,13 +352,14 @@ function buildFacade(rack) {
     for (let i = 1; i < cols; i++) {
       const x = caseLocal(rack, i, 0)[0] + (rack.flip ? 1 : -1) * colW[i] / 2;
       const m = new THREE.Mesh(new THREE.PlaneGeometry(SEP_W, rack.H), sepMat); m.position.set(x, BASE + rack.H / 2, 0.006);
-      m.userData.sep = { axis: 'col', i: i - 1 }; g.add(m);
+      m.userData.sep = { axis: 'col', i: i - 1 }; g.add(m); rack.seps.push(m);
     }
     for (let j = 1; j < rows; j++) {
       const m = new THREE.Mesh(new THREE.PlaneGeometry(rack.W, SEP_W), sepMat); m.position.set(0, BASE + rowY[j], 0.006);
-      m.userData.sep = { axis: 'row', i: j - 1 }; g.add(m);
+      m.userData.sep = { axis: 'row', i: j - 1 }; g.add(m); rack.seps.push(m);
     }
     group.add(g); rack.facade = g;
+    paintSeps(rack);
   }
   // Nombre maximal de bouteilles visibles : toutes les places des cases maçonnées, sinon selon la disposition.
   const n = rack.isCases ? rack.places.flat().reduce((s, p) => s + p.length, 0) : cols * rows * layout.pts.length;
@@ -369,6 +371,18 @@ function buildFacade(rack) {
 }
 const SEP_W = 0.025;   // épaisseur dessinée d'une séparation entre deux cases
 const sepMat = new THREE.MeshBasicMaterial({ color: 0x1f2630 });
+// Réglage des séparations en cours (déclaré ici : les casiers sont construits avant la section « Ajuster »)
+let adjust = null;   // { k, before: { colW, rowH }, sel: { axis, i } | null, drag: { from, sizes } | null }
+const sepHlMat = new THREE.MeshBasicMaterial({ color: C.trouve });   // séparation choisie (orange)
+/** Séparations épaissies pendant « Ajuster les séparations », celle qui est choisie en orange. */
+function paintSeps(rack) {
+  const on = adjust?.k === rack.key;
+  for (const m of rack.seps || []) {
+    const { axis, i } = m.userData.sep, sel = on && adjust.sel?.axis === axis && adjust.sel.i === i;
+    m.material = sel ? sepHlMat : sepMat;
+    m.scale.set(axis === 'col' && on ? 2.4 : 1, axis === 'row' && on ? 2.4 : 1, 1);
+  }
+}
 const caseMatCache = new Map();
 function caseMat(tex) { if (!caseMatCache.has(tex)) caseMatCache.set(tex, new THREE.MeshBasicMaterial({ map: tex })); return caseMatCache.get(tex); }
 /**
@@ -625,6 +639,85 @@ function updateHero(now) {
   hero.quaternion.slerpQuaternions(a.qIn, qTmp.copy(a.camQ).multiply(qSpin), u);
 }
 
+// ---------- Ajuster les séparations d'un casier en cases maçonnées ----------
+// On touche une séparation (elle s'allume) et on la fait glisser. Une séparation s'arrête d'elle-même avant
+// qu'une case n'ait plus assez de places pour ses bouteilles : aucune bouteille ne peut disparaître.
+const sizesOf = (k, axis) => (axis === 'col' ? rk[k].colW : rk[k].rowH);
+function startAdjust(k) {
+  if (!racks[k]?.isCases) return;
+  closeSheet(); endMode(); $('results').hidden = true;
+  const g = racks[k].grid;
+  adjust = { k, before: { colW: rk[k].colW, rowH: rk[k].rowH }, sel: null, drag: null };
+  rk[k].colW = [...g.colW]; rk[k].rowH = [...g.rowH];   // copie de travail, enregistrée par « Terminé »
+  showRack(k); view.d = dMax(racks[k]); clampView();
+  document.body.classList.add('adjusting'); $('adjustBar').hidden = false; adjustText();
+  paintSeps(racks[k]);
+}
+function adjustText(extra = '') {
+  $('adjustText').textContent = extra || 'Touchez une séparation entre deux cases, puis faites-la glisser.';
+}
+/** Redessine le casier après un changement de tailles (la taille totale ne change pas). */
+function rebuildRack(k) {
+  const rack = racks[k]; rack.grid = rackGrid(rk[k]);
+  buildFacade(rack); rebuildBottles(); rebuildRings();
+}
+async function endAdjust(save) {
+  if (!adjust) return;
+  const { k, before } = adjust;
+  if (save) {
+    const next = normalizeConfig({ ...config, rev: CONFIG_REV });
+    try { localStorage.setItem(CONFIG_KEY, JSON.stringify(next)); }
+    catch { toast('Impossible d\'enregistrer le réglage sur cet appareil (stockage bloqué)'); return; }   // le mode reste ouvert
+  } else {
+    if (before.colW) rk[k].colW = before.colW; else delete rk[k].colW;
+    if (before.rowH) rk[k].rowH = before.rowH; else delete rk[k].rowH;
+  }
+  adjust = null; document.body.classList.remove('adjusting'); $('adjustBar').hidden = true;
+  rebuildRack(k); applyVisibility();
+  if (save) saved('Séparations enregistrées');
+}
+$('adjustDone').onclick = () => endAdjust(true);
+$('adjustCancel').onclick = () => endAdjust(false);
+/** Point du doigt dans le repère du casier (ou null hors du casier). */
+function rackPoint(k, cx, cy) {
+  ndc.set((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const h = raycaster.intersectObject(racks[k].plane, false)[0];
+  return h ? racks[k].group.worldToLocal(h.point.clone()) : null;
+}
+/** Séparation la plus proche du doigt, à moins de 24 px (zone de toucher élargie), ou null. */
+function sepAt(k, l) {
+  const rack = racks[k], mpp = 2 * view.d * TAN_V / window.innerHeight, tol = 24 * mpp;
+  let best = null, bd = tol;
+  for (const m of rack.seps) {
+    const { axis } = m.userData.sep, d = axis === 'col' ? Math.abs(l.x - m.position.x) : Math.abs(l.y - m.position.y);
+    if (d <= bd) { bd = d; best = m.userData.sep; }
+  }
+  return best;
+}
+/** Une case garde-t-elle assez de places pour ses bouteilles avec cette taille ? (butée des séparations) */
+function sizeAccepted(k, axis, index, size) {
+  const { colW, rowH } = rk[k], n = axis === 'col' ? rowH.length : colW.length;
+  for (let j = 0; j < n; j++) {
+    const [c, r] = axis === 'col' ? [index, j] : [j, index];
+    const w = axis === 'col' ? size : colW[c], h = axis === 'col' ? rowH[r] : size;
+    if (casePlaces(w, h).length < pileOf(allBottles(), slotId(k, c, r)).length) return false;
+  }
+  return true;
+}
+const cmText = (m) => `${Math.round(m * 100)} cm`;
+function dragSeparator(l) {
+  const { k, sel, drag } = adjust, rack = racks[k];
+  // Déplacement mesuré depuis l'entrée (colonnes) ou depuis le bas (étagères)
+  const delta = sel.axis === 'col' ? (rack.flip ? -1 : 1) * (l.x - drag.from.x) : l.y - drag.from.y;
+  const next = moveSeparator(drag.sizes, sel.i, delta, (index, size) => sizeAccepted(k, sel.axis, index, size));
+  if (sel.axis === 'col') rk[k].colW = next; else rk[k].rowH = next;
+  rebuildRack(k);
+  const a = next[sel.i], b = next[sel.i + 1];
+  adjustText(sel.axis === 'col' ? `Colonne ${sel.i + 1} : ${cmText(a)} · colonne ${sel.i + 2} : ${cmText(b)} de large`
+    : `Rangée ${sel.i + 1} : ${cmText(a)} · rangée ${sel.i + 2} : ${cmText(b)} de haut`);
+}
+
 // ---------- Toucher : tourner, faire défiler, sélectionner ----------
 const pointers = new Map(); let tapStart = null, pinchDist = 0;
 const raycaster = new THREE.Raycaster(), ndc = new THREE.Vector2();
@@ -634,10 +727,16 @@ canvas.addEventListener('pointerdown', (e) => {
   if (pointers.size === 1) tapStart = { x: e.clientX, y: e.clientY, t: performance.now() };
   else { tapStart = null; const [a, b] = [...pointers.values()]; pinchDist = Math.hypot(a.x - b.x, a.y - b.y); }
   $('search').blur();
+  if (adjust) {   // un doigt sur une séparation : elle s'allume et suit le doigt ; ailleurs : on fait défiler
+    adjust.drag = null;
+    const l = pointers.size === 1 && rackPoint(adjust.k, e.clientX, e.clientY), sep = l && sepAt(adjust.k, l);
+    if (sep) { adjust.sel = sep; adjust.drag = { from: l, sizes: [...sizesOf(adjust.k, sep.axis)] }; tapStart = null; paintSeps(racks[adjust.k]); }
+  }
 });
 canvas.addEventListener('pointermove', (e) => {
   const p = pointers.get(e.pointerId); if (!p) return;
   const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
+  if (pointers.size === 1 && adjust?.drag) { const l = rackPoint(adjust.k, e.clientX, e.clientY); if (l) dragSeparator(l); return; }
   if (pointers.size === 1) {
     if (tapStart && Math.hypot(e.clientX - tapStart.x, e.clientY - tapStart.y) < 8) return;
     tapStart = null;
@@ -651,6 +750,7 @@ canvas.addEventListener('pointermove', (e) => {
 });
 function endPointer(e) {
   const had = pointers.delete(e.pointerId);
+  if (adjust) { adjust.drag = null; tapStart = null; return; }   // en réglage, un toucher n'ouvre rien
   if (had && tapStart && pointers.size === 0 && e.type === 'pointerup' && performance.now() - tapStart.t < 500) onTap(e.clientX, e.clientY);
   tapStart = null;
 }
@@ -1053,6 +1153,7 @@ $('sheetBody').addEventListener('click', async (e) => {
   else if (act === 'install') showInstall();
   else if (act === 'menu') showMenu();
   else if (act === 'config-focus') showConfig(e.target.closest('[data-rack]')?.dataset.rack);
+  else if (act === 'adjust') startAdjust(e.target.closest('[data-rack]')?.dataset.rack);
   else if (act === 'rack-tools') { const k = e.target.closest('[data-rack]')?.dataset.rack; if (racks[k]) { showRack(k); showRackTools(k); } }
   else if (act === 'scan-settings') showScanSettings();
   else if (act === 'clear-col' || act === 'clear-row' || act === 'clear-rack') await clearPart(act);
@@ -1222,6 +1323,7 @@ $('results').addEventListener('click', (e) => {
 // ---------- Barre du bas : choisir la vue ----------
 $('nav').addEventListener('click', (e) => {
   const v = e.target.closest('button')?.dataset.view; if (!v) return;
+  if (adjust) endAdjust(false);   // changer de vue abandonne le réglage en cours
   closeSheet(); $('results').hidden = true;
   if (v === 'overview') showOverview(); else showRack(v);
 });
