@@ -18,7 +18,7 @@ const $ = (id) => document.getElementById(id);
 
 // Juste après une mise à jour, le navigateur peut associer une ancienne page (sans les nouveaux éléments)
 // au nouveau code : on recharge une fois pour tout reprendre à jour, au lieu d'afficher un écran vide.
-if (['scene', 'sheet', 'nav', 'dialog', 'undoBtn', 'rackBtn', 'updateBtn'].some((id) => !$(id))) {
+if (['scene', 'sheet', 'nav', 'dialog', 'undoBtn', 'updateBtn'].some((id) => !$(id))) {
   // Sans sessionStorage, on ne peut pas se souvenir de la tentative : on ne recharge pas (pas de boucle possible).
   let retried = true; try { retried = !!sessionStorage.getItem('cave-reload'); sessionStorage.setItem('cave-reload', '1'); } catch { retried = true; }
   if (!retried) location.reload();
@@ -461,7 +461,7 @@ let freeArea = { top: 0, bottom: 0 };
 function measureFreeArea() {
   const h = window.innerHeight, top = $('topbar').getBoundingClientRect().bottom + 8;
   // (offsetParent est toujours nul pour un élément « fixed » : on teste la présence à l'écran avec getClientRects)
-  const lows = ['nav', 'hint', 'rackBtn'].map((id) => $(id)).filter((el) => el && !el.hidden && el.getClientRects().length && el.textContent.trim())
+  const lows = ['nav', 'hint'].map((id) => $(id)).filter((el) => el && !el.hidden && el.getClientRects().length && el.textContent.trim())
     .map((el) => el.getBoundingClientRect().top).filter((y) => y > h / 2);
   freeArea = { top, bottom: h - (lows.length ? Math.min(...lows) - 8 : h) };
 }
@@ -475,7 +475,7 @@ function applyViewOffset() {
 }
 window.addEventListener('resize', () => { applyViewOffset(); clampView(); });   // rotation : la partie libre change
 const dMax = (rack) => Math.max(dFor(rack.W), (rack.H + 0.5) / 2 / TAN_V / usableRatio());   // tout le casier, dans la partie libre
-const dMin = (rack) => dFor(Math.max(0.25, 1.3 * rack.cw));                  // zoom maximal : une place de casier métallique fait ≈ 55 px
+const dMin = (rack) => (rack.isCases ? 0.3 / 2 / tanH() : dFor(Math.max(0.25, 1.3 * rack.cw)));   // cases : on peut zoomer sur une case                  // zoom maximal : une place de casier métallique fait ≈ 55 px
 // Largeur montrée à l'ouverture d'un casier : assez d'emplacements pour se repérer, assez grands pour être touchés du doigt.
 const viewW = (rack) => clamp(6 * rack.cw, 0.54, 1.4);
 function clampView() {
@@ -502,10 +502,9 @@ function applyVisibility() {
   decor.visible = ov;
   for (const key of RACK_ORDER) racks[key].group.visible = ov || key === k;
   document.querySelectorAll('#nav button').forEach((b) => b.classList.toggle('on', b.dataset.view === (ov ? 'overview' : k)));
-  $('rackBtn').hidden = ov;
   document.body.classList.toggle('rack-mode', !ov);
   $('hint').textContent = ov ? 'Touchez un casier pour l\'ouvrir · glissez pour tourner la maquette'
-    : 'Touchez une bouteille · glissez pour faire défiler';
+    : racks[k]?.isCases ? 'Touchez une case pour l\'ouvrir · glissez pour faire défiler' : 'Touchez une bouteille · glissez pour faire défiler';
   applyViewOffset();
 }
 function showOverview() { view.mode = 'overview'; view.key = null; applyVisibility(); }
@@ -518,6 +517,23 @@ function showRack(key) {
   applyVisibility();   // d'abord : affiche les boutons de la vue casier, puis mesure la partie libre de l'écran
   view.d = Math.min(dFor(Math.min(rack.W, viewW(rack))), dMax(rack)); view.u = 0;
   view.v = restV(rack);
+  clampView();
+}
+/**
+ * Cadre une case maçonnée dans la partie de l'écran au-dessus de la fiche (`sheetTop`, en pixels), aussi grande
+ * que possible mais sans que le culot d'une bouteille fasse moins de 44 px. Une case trop large pour cela est
+ * cadrée sur son coin en bas à droite (le début de la pile) ; on fait glisser pour voir le reste.
+ */
+function focusCase(k, c, r, sheetTop = window.innerHeight * 0.5) {
+  const rack = racks[k], [cx, cy, w, h] = caseLocal(rack, c, r), H = window.innerHeight;
+  if (view.mode !== 'rack' || view.key !== k) showRack(k);
+  const top = freeArea.top, bottom = Math.max(top + 120, sheetTop - 8), frac = (bottom - top) / H;
+  const dFit = Math.max((w + 0.06) / 2 / tanH(), (h + 0.06) / 2 / TAN_V / frac);
+  const d44 = BOTTLE_D * H / (88 * TAN_V);   // distance où un culot de 8 cm fait 44 px à l'écran
+  view.d = Math.min(dFit, d44);
+  const m = 2 * view.d * TAN_V / H, yc = (freeArea.top + H - freeArea.bottom) / 2;   // mètres par pixel ; centre visé à l'écran
+  if (dFit <= d44) { view.u = cx; view.v = cy - (yc - (top + bottom) / 2) * m; }
+  else { view.u = cx + w / 2 + 0.02 - view.d * tanH(); view.v = cy - h / 2 - (yc - bottom + 4) * m; }
   clampView();
 }
 function focusSlot(key, c, r) {
@@ -671,7 +687,7 @@ function pick(cx, cy) {
 
 // ---------- État de l'interface ----------
 let selected = null;   // { key, c, r, id }
-let lastSlot = null;   // dernier emplacement touché, pour pré-remplir « Gérer ce casier »
+let lastSlot = null;   // dernier emplacement touché, pour pré-remplir les outils « Gérer » d'un casier
 let mode = null;       // { type: 'copy' | 'move', source: fiche }
 let draftPhoto = null;
 
@@ -751,7 +767,7 @@ function selectBottle(id) {
   if (!pos) return showCase(caseIdOf(id));   // hors des dimensions actuelles : on montre au moins la case
   hideHero();
   selected = { key: k, c, r, id, caseId: caseIdOf(id) }; lastSlot = selected;
-  focusSlot(k, c, r);
+  focusCase(k, c, r);
   racks[k].group.localToWorld(selRing.position.set(pos[0], pos[1], 0)).addScaledVector(racks[k].normal, BOTTLE_OUT + 0.005);
   selRing.quaternion.copy(racks[k].group.quaternion); selRing.scale.setScalar(BOTTLE_D / 0.18); selRing.visible = true;
   presentBottle(b, k, c, r);
@@ -766,7 +782,7 @@ function showCase(caseId, hl = null) {
   if (!inRack(k, c, r)) return toast('Cet emplacement n\'existe plus avec les dimensions actuelles');
   hideHero(); selRing.visible = false;
   selected = { key: k, c, r, id: caseId, caseId }; lastSlot = selected;
-  focusSlot(k, c, r);
+  if (view.mode !== 'rack' || view.key !== k) showRack(k);
   if (hl) { highlighted = hl; rebuildRings(); }
   const pile = pileOf(allBottles(), caseId), cap = capacityOf(caseId), groups = new Map();
   for (const b of pile) { const g = `${norm(b.nom)}|${b.millesime || ''}`; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(b); }
@@ -779,6 +795,9 @@ function showCase(caseId, hl = null) {
     <p class="help">${pile.length} bouteille${pile.length > 1 ? 's' : ''} · ${Math.max(0, cap - pile.length)} place${cap - pile.length > 1 ? 's' : ''} libre${cap - pile.length > 1 ? 's' : ''}.${pile.length ? ' Touchez une bouteille dans la case pour voir sa fiche, ou une ligne pour la repérer.' : ''}</p>
     <div class="btns"><button class="btn primary block" data-act="add">Ajouter des bouteilles</button>
       ${pile.length ? '<button class="btn danger block" data-act="clear-case">Vider cette case</button>' : ''}</div>`);
+  // La case en grand, au-dessus de la fiche. On part de la hauteur de la fiche (pas de sa position : elle est en
+  // train de monter, animée) ; une longue liste défile, la case garde au moins 40 % de l'écran.
+  focusCase(k, c, r, Math.max(window.innerHeight * 0.4, window.innerHeight - $('sheet').offsetHeight));
 }
 /** Ouvre ce qu'une ligne de liste désigne : la bouteille, la case (avec ces bouteilles allumées) ou l'emplacement. */
 function goTo(id, ids = '') {
@@ -1034,6 +1053,7 @@ $('sheetBody').addEventListener('click', async (e) => {
   else if (act === 'install') showInstall();
   else if (act === 'menu') showMenu();
   else if (act === 'config-focus') showConfig(e.target.closest('[data-rack]')?.dataset.rack);
+  else if (act === 'rack-tools') { const k = e.target.closest('[data-rack]')?.dataset.rack; if (racks[k]) { showRack(k); showRackTools(k); } }
   else if (act === 'scan-settings') showScanSettings();
   else if (act === 'clear-col' || act === 'clear-row' || act === 'clear-rack') await clearPart(act);
   else if (act === 'soon') showSoon();
@@ -1086,7 +1106,8 @@ $('sheetBody').addEventListener('submit', async (e) => {
     if (more) startMode('copy', rec);
   } else if (e.target.id === 'configForm') {
     const d = Object.fromEntries(new FormData(e.target).entries()), racksIn = {};
-    for (const k of RACK_ORDER) racksIn[k] = { style: d[`${k}_style`], cols: d[`${k}_cols`], rows: d[`${k}_rows`] };
+    // On garde les séparations réglées à la main (normalizeConfig les ajuste au nouveau nombre de colonnes et rangées)
+    for (const k of RACK_ORDER) racksIn[k] = { style: d[`${k}_style`], cols: d[`${k}_cols`], rows: d[`${k}_rows`], colW: rk[k].colW, rowH: rk[k].rowH };
     const next = normalizeConfig({ nom: (d.nom || '').trim(), rev: CONFIG_REV, racks: racksIn });   // rev : valeurs choisies à l'instant, aucune conversion
     if (!await confirmConfigChange(next)) return;
     try { localStorage.setItem(CONFIG_KEY, JSON.stringify(next)); } catch { return toast('Impossible d\'enregistrer le réglage sur cet appareil (stockage bloqué)'); }
@@ -1207,7 +1228,6 @@ $('nav').addEventListener('click', (e) => {
 
 // ---------- Menu ----------
 $('menuBtn').onclick = showMenu;
-$('rackBtn').onclick = () => showRackTools(view.key);
 function showMenu() {
   closeSheet();
   const total = Object.values(racks).reduce((s, r) => s + r.cols * r.rows, 0);
@@ -1246,11 +1266,13 @@ function showConfig(focus = null) {
       <div class="chips">${Object.entries(STYLES).map(([sk, st]) => `<button type="button" class="chip${sk === r.style ? ' on' : ''}" data-style="${sk}">${st.nom}</button>`).join('')}</div>
       <input type="hidden" name="${k}_style" value="${r.style}">
       <p class="help small" data-aide>${esc(STYLES[r.style].aide)}</p>
-      <p class="size" data-size>${sizeText(r.style, r.cols, r.rows)}</p>
+      <p class="size" data-size>${sizeText(r.style, r.cols, r.rows, k)}</p>
       <div class="two">
         <label><span data-lab="cols">Colonnes (max ${lim.cols})</span><input name="${k}_cols" value="${r.cols}" inputmode="numeric" pattern="[0-9]*"></label>
         <label><span data-lab="rows">Rangées (max ${lim.rows})</span><input name="${k}_rows" value="${r.rows}" inputmode="numeric" pattern="[0-9]*"></label>
-      </div></fieldset>`;
+      </div>
+      <div class="btns"><button type="button" class="btn" data-act="rack-tools" data-rack="${k}">Gérer (vider…)</button>
+        ${r.style === 'cases' ? `<button type="button" class="btn" data-act="adjust" data-rack="${k}">Ajuster les séparations</button>` : ''}</div></fieldset>`;
   };
   openSheet('Rangement de la cave', `
     <p class="help">Pour chaque casier, choisissez le type de rangement puis le nombre de <b>colonnes</b> (en longueur, depuis l'entrée) et de <b>rangées</b> (en hauteur). La maquette s'adapte. Chaque casier a sa propre taille : l'îlot peut être plus court ou plus long que les murs, et les deux murs peuvent être différents.</p>
@@ -1262,15 +1284,17 @@ function showConfig(focus = null) {
   $('cfgFocus')?.scrollIntoView({ block: 'start' });
 }
 /** « Longueur ≈ 3,6 m · hauteur ≈ 1,9 m » pour un casier. */
-function sizeText(style, cols, rows) {
-  const { length, height } = rackSize(style, cols, rows);
+function sizeText(style, cols, rows, k = null) {
+  // Cases maçonnées déjà réglées à la main : la taille tient compte des séparations déplacées
+  const g = k && style === 'cases' && rk[k].style === 'cases' ? rackGrid({ ...rk[k], cols, rows }) : null;
+  const { length, height } = g ? { length: g.W, height: g.H } : rackSize(style, cols, rows);
   return `Longueur ≈ ${meters(length)} · hauteur ≈ ${meters(height)}`;
 }
 /** Met à jour la taille affichée d'un casier pendant le réglage. */
 function updateSize(box) {
   const k = box.dataset.rack, v = (f) => box.querySelector(`[name="${k}_${f}"]`).value, style = v('style'), lim = rackLimits(k, style);
   // Taille bornée aux maximums du type : c'est ce qui sera réellement appliqué.
-  box.querySelector('[data-size]').textContent = sizeText(style, clamp(parseInt(v('cols')) || 0, 0, lim.cols), clamp(parseInt(v('rows')) || 0, 0, lim.rows));
+  box.querySelector('[data-size]').textContent = sizeText(style, clamp(parseInt(v('cols')) || 0, 0, lim.cols), clamp(parseInt(v('rows')) || 0, 0, lim.rows), k);
 }
 $('sheetBody').addEventListener('input', (e) => { const box = e.target.closest('#configForm [data-rack]'); if (box) updateSize(box); });
 /** Choix d'un type de rangement dans les réglages : met à jour l'aide et les maximums affichés. */
@@ -1303,7 +1327,7 @@ async function confirmConfigChange(next) {
     if (hidden) warnings.push(`• ${RACK_NAMES[k]} : ${hidden} fiche(s) seront hors des nouvelles dimensions. Elles sont conservées mais invisibles tant que vous n'agrandissez pas.`);
   }
   if (!warnings.length) return true;
-  return ask(`Attention, l'arrangement risque d'être mélangé :\n\n${warnings.join('\n\n')}\n\nConseil : notez ces bouteilles ou videz d'abord le casier (bouton « Gérer ce casier »).`, 'Appliquer quand même');
+  return ask(`Attention, l'arrangement risque d'être mélangé :\n\n${warnings.join('\n\n')}\n\nConseil : notez ces bouteilles ou videz d'abord le casier (menu, « Rangement de la cave », bouton « Gérer » du casier).`, 'Appliquer quand même');
 }
 
 // ---------- Gérer un casier : vider une colonne, une rangée ou tout le casier ----------

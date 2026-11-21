@@ -118,9 +118,6 @@ p.help { color: var(--muted); font-size: 15px; line-height: 1.5; margin: 6px 0 1
 .version { text-align: center; margin-top: 16px; }
 a { color: var(--blue); }
 
-/* Bouton « Gérer ce casier » (vue d'un casier) */
-#rackBtn { position: fixed; right: 12px; bottom: calc(var(--sab) + 134px); z-index: 4; background: var(--card); color: var(--navy);
-  font-weight: 600; font-size: 15px; padding: 12px 16px; min-height: 48px; border-radius: 24px; box-shadow: 0 4px 16px rgba(4, 16, 36, .35); }
 
 /* Barre « Annuler » après une suppression */
 #undo { position: fixed; left: 12px; right: 12px; bottom: calc(var(--sab) + 84px); z-index: 15; display: flex; align-items: center; gap: 12px;
@@ -160,9 +157,7 @@ body.undo-on #sheetBody { padding-bottom: calc(var(--sab) + 96px); }
 #updateBar span { flex: 1; }
 #updateBtn { background: #2e7d47; color: #fff; border-radius: 12px; padding: 12px 14px; min-height: 48px; font-weight: 700; }
 
-/* Vue d'un casier : l'aide à gauche et « Gérer ce casier » à droite, sur une même ligne au-dessus de la barre du bas.
-   La maquette est recentrée au-dessus de cette ligne (applyViewOffset) ; l'aide a un fond sombre pour rester lisible
-   quand le casier défile dessous. */
-body.rack-mode #hint { right: 186px; text-align: left; font-size: 14px; bottom: calc(var(--sab) + 92px);
+/* Vue d'un casier : l'aide au-dessus de la barre du bas, sur un fond sombre pour rester lisible quand le casier
+   défile dessous. La maquette est recentrée au-dessus d'elle (applyViewOffset). */
+body.rack-mode #hint { font-size: 14px; bottom: calc(var(--sab) + 92px);
   background: rgba(10, 28, 54, .88); border-radius: 14px; padding: 6px 10px; }
-body.rack-mode #rackBtn { bottom: calc(var(--sab) + 92px); }
