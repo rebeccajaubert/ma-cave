@@ -449,6 +449,7 @@ function rebuildBottles() {
   }
 }
 let highlighted = [];    // identifiants mis en évidence par la recherche (anneaux orange)
+let picked = false;      // un résultat de recherche a été choisi : un enregistrement ne rallume pas toute la recherche
 function rebuildRings() {
   const count = {}; for (const k of RACK_ORDER) count[k] = 0;
   for (const id of highlighted) {
@@ -921,6 +922,9 @@ function showCase(caseId, hl = null) {
 /** Ouvre ce qu'une ligne de liste désigne : la bouteille, la case (avec ces bouteilles allumées) ou l'emplacement. */
 function goTo(id, ids = '') {
   const { k, c, r, u } = parseId(id), list = ids ? ids.split(',') : [id];
+  // Seules les bouteilles de la ligne choisie restent entourées : sinon une recherche large (« Chat ») laissait
+  // allumés tous les « Château… » alors qu'on venait d'en choisir un.
+  highlighted = list; picked = true; rebuildRings();
   // Une bouteille seule, ou une bouteille de case dans un casier qui n'est plus en cases maçonnées : sa fiche
   if (u && (list.length === 1 || !racks[k]?.isCases)) return selectBottle(id);
   if (racks[k]?.isCases) return showCase(caseIdOf(id), list);
@@ -938,8 +942,9 @@ function openSheet(title, html, tall = false) {
 function closeSheet() {
   scanToken++;
   const had = selected; $('sheet').hidden = true; $('sheetBody').innerHTML = ''; hideHero(); selRing.visible = false; selected = null;
-  // Bouteilles allumées depuis une fiche Case : on les éteint en la fermant (sauf recherche en cours)
-  if (had?.caseId && !$('search').value.trim() && highlighted.length) { highlighted = []; rebuildRings(); }
+  // Bouteilles allumées depuis une fiche ou une liste : on les éteint en la fermant (sauf recherche en cours,
+  // où la bouteille choisie reste entourée pour qu'on la retrouve)
+  if (had && !$('search').value.trim() && highlighted.length) { highlighted = []; rebuildRings(); }
   if (had && view.mode === 'rack') {
     // Retour au cadrage du casier (après le zoom sur une case), en restant à hauteur de la case qu'on vient de quitter
     const rack = racks[view.key];
@@ -1348,10 +1353,14 @@ function rowHtml({ b, ids, n }) {
 }
 function runSearch(show = true) {
   const q = norm($('search').value.trim()); $('searchClear').hidden = !q;
-  if (!q) { highlighted = []; rebuildRings(); $('results').hidden = true; return; }
+  if (!q) { highlighted = []; picked = false; rebuildRings(); $('results').hidden = true; return; }
   const words = q.split(/\s+/);
   const found = allBottles().filter((b) => { const h = haystack(b); return words.every((w) => h.includes(w)); }).sort(sortBottles);
-  highlighted = found.map((b) => b.id); rebuildRings();
+  // Après le choix d'un résultat, refresh() (enregistrement, déplacement…) garde seulement ce vin entouré ;
+  // retaper ou rouvrir la recherche (show) remontre tous les résultats.
+  if (show) picked = false;
+  // (une bouteille choisie puis bue ou déplacée perd son anneau : pas d'anneau orange sur une place vide)
+  highlighted = picked ? highlighted.filter((id) => bottleAt(id)) : found.map((b) => b.id); rebuildRings();
   if (!show) return;
   const rows = groupRows(found);
   $('results').innerHTML = rows.length ? rows.slice(0, 80).map(rowHtml).join('') + (rows.length > 80 ? `<div class="empty">… et ${rows.length - 80} autres</div>` : '')

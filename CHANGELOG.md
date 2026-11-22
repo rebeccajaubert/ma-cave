@@ -3,6 +3,11 @@
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), versionnement [sémantique](https://semver.org/lang/fr/) :
 `MAJEUR.MINEUR.CORRECTIF`. Le numéro de version est défini dans `version.js` (voir README, « Publier une version »).
 
+## [0.4.2] - 2026-11-21
+
+### Corrigé
+- Recherche : en touchant un résultat, seules les bouteilles de ce vin restent entourées en orange (une recherche large comme « Chat » laissait entourés tous les « Château… »), y compris après avoir modifié, déplacé ou retiré la bouteille choisie. Les anneaux s'éteignent en fermant la fiche quand la recherche est vide.
+
 ## [0.4.1] - 2026-11-21
 
 ### Corrigé

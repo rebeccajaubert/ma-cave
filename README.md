@@ -16,7 +16,7 @@ Application web installable (PWA) : pas d'App Store, pas de compte, gratuite. Le
 - **Plusieurs bouteilles par emplacement** (− / +) dans les autres rangements, et **même vin à plusieurs endroits** (« J'ai la même ailleurs »).
 - **Vider** une case (depuis sa fiche), une colonne, une rangée ou tout un casier (menu → *Rangement de la cave* → *Gérer*), avec **Annuler** pendant 10 secondes.
 - **À boire bientôt**, **filtre par couleur**, **mode d'emploi** au premier lancement.
-- **Recherche** par nom, année, appellation, région… ; les résultats s'entourent d'un anneau orange dans la cave.
+- **Recherche** par nom, année, appellation, région… ; les résultats s'entourent d'un anneau orange dans la cave ; en touchant un résultat, seules les bouteilles de ce vin restent entourées.
 - **Suggestions de saisie** à partir des fiches existantes.
 - **Lecture automatique de l'étiquette** par photo (optionnelle, voir ci-dessous).
 - **Sauvegarde et restauration** en fichier, **dimensions réglables**, **mode hors-ligne**.

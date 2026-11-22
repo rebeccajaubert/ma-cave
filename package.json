@@ -1,6 +1,6 @@
 {
   "name": "ma-cave",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "private": true,
   "description": "Ma Cave : maquette 3D d'une cave à vin, installable sur iPhone (PWA)",
   "type": "module",
