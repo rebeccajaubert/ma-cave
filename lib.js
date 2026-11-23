@@ -490,3 +490,22 @@ export function isDevMode(hostname, search) {
   if (['localhost', '127.0.0.1', '[::1]', '::1'].includes(h) || h.endsWith('.localhost')) return true;
   return new URLSearchParams(search).has('debug');
 }
+
+/**
+ * Fusion de ce qui a été dit dans la fiche. Ce que la voix donne remplace la valeur du champ (le dire est une intention
+ * claire, et rien n'est enregistré sans « Enregistrer »), sauf un champ tapé à la main dans ce formulaire, qui n'est
+ * jamais touché. Un champ rempli par la voix au tour précédent et absent de la nouvelle réponse est vidé : le texte
+ * complet renvoyé fait foi. La couleur n'est jamais vidée (une puce reste toujours choisie).
+ * @param {object} out réponse validée (`parseVoiceResponse`)
+ * @param {{hand: string[], auto: string[], fields: string[]}} s champs tapés à la main, remplis par la voix, présents
+ * @returns {{set: Record<string, string>, auto: string[]}} valeurs à écrire ('' pour vider) et champs remplis par la voix
+ */
+export function mergeVoice(out, { hand, auto, fields }) {
+  const set = {}, filled = [];
+  for (const f of fields) {
+    if (hand.includes(f)) continue;
+    const v = f === 'quantite' ? (out.quantite == null ? '' : String(out.quantite)) : String(out[f] ?? '');
+    if (v !== '') { set[f] = v; filled.push(f); } else if (auto.includes(f) && f !== 'couleur') set[f] = '';
+  }
+  return { set, auto: filled };
+}

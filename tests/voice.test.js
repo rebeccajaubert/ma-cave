@@ -59,3 +59,30 @@ test('readVoice : clé en en-tête, jamais dans l\'URL ; sans clé -> nokey', as
 });
 
 test('scanErrorMessage connaît « empty »', () => assert.match(scanErrorMessage({ kind: 'empty' }), /rien entendu/));
+
+// ---------- Fusion dans la fiche (lib.js) ----------
+import { mergeVoice } from '../lib.js';
+
+const F = ['nom', 'couleur', 'millesime', 'apogee', 'appellation', 'region', 'cepage', 'quantite', 'prix', 'note', 'commentaire'];
+const out = (o) => ({ transcription: 'x', nom: '', millesime: '', apogee: '', appellation: '', region: '', cepage: '', couleur: '', quantite: null, prix: '', note: '', commentaire: '', ...o });
+
+test('mergeVoice : remplace ce qui est dit, sauf ce qui est tapé à la main', () => {
+  const r = mergeVoice(out({ nom: 'Talbot', note: '17', couleur: 'rouge' }), { hand: ['nom'], auto: [], fields: F });
+  assert.deepEqual(r.set, { note: '17', couleur: 'rouge' }); assert.deepEqual(r.auto.sort(), ['couleur', 'note']);
+});
+
+test('mergeVoice : un champ rempli par la voix et absent de la nouvelle réponse est vidé', () => {
+  const r = mergeVoice(out({ nom: 'Talbot' }), { hand: [], auto: ['nom', 'prix'], fields: F });
+  assert.deepEqual(r.set, { nom: 'Talbot', prix: '' }); assert.deepEqual(r.auto, ['nom']);
+});
+
+test('mergeVoice : quantité seulement si le formulaire en a une ; couleur vidée jamais (puce obligatoire)', () => {
+  assert.deepEqual(mergeVoice(out({ quantite: 6 }), { hand: [], auto: [], fields: F.filter((f) => f !== 'quantite') }).set, {});
+  assert.deepEqual(mergeVoice(out({ quantite: 6 }), { hand: [], auto: [], fields: F }).set, { quantite: '6' });
+  assert.deepEqual(mergeVoice(out({}), { hand: [], auto: ['couleur'], fields: F }).set, {});
+});
+
+test('mergeVoice : un champ tapé à la main après un remplissage vocal n\'est ni remplacé ni vidé', () => {
+  const r = mergeVoice(out({ prix: '30' }), { hand: ['nom', 'prix'], auto: ['nom'], fields: F });
+  assert.deepEqual(r.set, {}); assert.deepEqual(r.auto, []);
+});
