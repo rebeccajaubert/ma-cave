@@ -18,7 +18,7 @@ Application web installable (PWA) : pas d'App Store, pas de compte, gratuite. Le
 - **À boire bientôt**, **filtre par couleur**, **mode d'emploi** au premier lancement.
 - **Recherche** par nom, année, appellation, région… ; les résultats s'entourent d'un anneau orange dans la cave ; en touchant un résultat, seules les bouteilles de ce vin restent entourées.
 - **Suggestions de saisie** à partir des fiches existantes.
-- **Lecture automatique de l'étiquette** par photo (optionnelle, voir ci-dessous).
+- **Lecture automatique** (optionnelle, voir ci-dessous) : par **photo** de l'étiquette, ou **à la voix** (« 🎤 Parler » : on décrit la bouteille naturellement, l'IA range chaque information dans la bonne case ; texte compris modifiable, dictée du clavier en secours). On vérifie toujours avant d'enregistrer.
 - **Sauvegarde et restauration** en fichier, **dimensions réglables**, **mode hors-ligne**.
 - **Protection des données** : copie de sécurité sur le téléphone avant chaque nouvelle version et avant chaque restauration (menu → *Revenir en arrière*), rappel de sauvegarde après un mois, stockage protégé demandé à l'iPhone.
 
@@ -51,18 +51,19 @@ Par choix esthétique, toutes les bouteilles sont montrées **culot vers l'allé
 
 Réglage par défaut (cave de Verdelot) : couloir de gauche en cases maçonnées (6 colonnes × 5 rangées), couloir de droite en casiers métalliques (36 colonnes × 15 rangées). Une fiche reste attachée à son numéro de colonne et de rangée : changer le type de rangement d'un casier qui contient des fiches peut les mélanger, l'app le signale avant d'appliquer.
 
-## Lecture automatique de l'étiquette (optionnelle)
+## Lecture automatique : photo et voix (optionnelle)
 
-La photo est envoyée à l'API **Gemini** de Google pour remplir la fiche. Il faut une clé gratuite :
+La photo de l'étiquette, ou l'enregistrement de ce qui est dit (« 🎤 Parler »), est envoyé à l'API **Gemini** de Google pour remplir la fiche. Il faut une clé gratuite :
 
 1. Aller sur <https://aistudio.google.com/apikey>, se connecter, « Create API key » (gratuit, sans carte bancaire).
-2. Dans l'app : menu → **Lecture des étiquettes** → coller la clé → **Enregistrer la clé** (elle est testée). À faire une fois sur chaque appareil.
+2. Dans l'app : menu → **Lecture automatique (photo et voix)** → coller la clé → **Enregistrer la clé** (elle est testée). À faire une fois sur chaque appareil.
 
 Il n'y a volontairement **pas de fichier `.env`** : l'app n'a pas de serveur, et une clé placée dans le code serait publique sur GitHub.
 
 À savoir :
 - La clé est stockée **uniquement sur l'appareil** (jamais dans le code, GitHub ou les sauvegardes).
-- Avec l'offre gratuite, Google peut réutiliser le contenu envoyé pour améliorer ses produits : ne photographier que des étiquettes.
+- Avec l'offre gratuite, Google peut réutiliser le contenu envoyé pour améliorer ses produits : ne photographier que des étiquettes, ne dire que ce qui concerne la bouteille.
+- À la voix : l'iPhone demande l'accès au micro (souvent à chaque ouverture de l'app installée). Enregistrement d'une minute au plus. Ce que la voix remplit remplace la valeur d'un champ, sauf ce qui a été tapé à la main dans la fiche ; le prix est compris par bouteille. Le micro n'est permis que sur une page sûre (HTTPS, ou `localhost`) : pour l'essayer avant publication, utiliser le simulateur iOS sur `http://localhost:8765`.
 - Sans clé ou sans réseau, la saisie manuelle reste disponible. Le modèle utilisé est défini dans `scan.js` (`MODELS`) ; les modèles Gemini changent, voir la documentation Google si la lecture cesse de fonctionner.
 
 ## Données et confidentialité
@@ -71,7 +72,7 @@ Il n'y a volontairement **pas de fichier `.env`** : l'app n'a pas de serveur, et
 - Une mise à jour ne touche pas aux fiches. Au premier lancement d'une nouvelle version, l'app copie d'abord fiches et rangement dans une base à part (`cave-a-vin-copies`, les 4 plus récentes) ; si la copie échoue, elle ne transforme pas les fiches. Restaurer (fichier ou copie) copie aussi l'état actuel avant de le remplacer.
 - Au démarrage, l'app demande à l'iPhone de ne pas vider son stockage pour faire de la place (`navigator.storage.persist()`) ; la réponse est affichée dans le menu.
 - Chaque ajout, modification ou suppression est écrit immédiatement sur l'appareil.
-- Rien n'est envoyé en ligne, sauf la photo d'étiquette si la lecture automatique est activée.
+- Rien n'est envoyé en ligne, sauf la photo d'étiquette ou l'enregistrement de la voix, quand on utilise la lecture automatique.
 
 ## Développement
 
@@ -95,7 +96,7 @@ Ajouter `?debug` à l'adresse expose `window.__cave` pour les tests dans le navi
 | `app.js` | Scène 3D (Three.js), interactions, fiches, menu |
 | `lib.js` | Fonctions pures (échappement HTML, identifiants, dimensions, quantités, suggestions ; pile des cases maçonnées, places en quinconce, séparations ; copies de sécurité et rappel de sauvegarde) |
 | `db.js` | Stockage local IndexedDB (fiches, et copies de sécurité dans une base à part) |
-| `scan.js` | Lecture d'étiquette via Gemini (clé, requête, validation de la réponse) |
+| `scan.js` | Lecture automatique via Gemini : étiquette (photo) et description à la voix ou écrite (clé, requêtes, validation des réponses) |
 | `version.js` | Numéro de version, source unique |
 | `sw.js`, `manifest.webmanifest`, `icons/` | Mode hors-ligne et installation iPhone |
 | `vendor/` | Three.js (copie locale, licence MIT) |

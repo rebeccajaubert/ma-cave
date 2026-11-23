@@ -3,6 +3,19 @@
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), versionnement [sémantique](https://semver.org/lang/fr/) :
 `MAJEUR.MINEUR.CORRECTIF`. Le numéro de version est défini dans `version.js` (voir README, « Publier une version »).
 
+## [0.5.0] - 2026-11-22
+
+### Ajouté
+- **Remplir une fiche en parlant.** En haut de la fiche, deux gros boutons : « 📷 Photo de l'étiquette » et « 🎤 Parler ». On touche « Parler », on décrit la bouteille naturellement (« Château Talbot 2016, Saint-Julien, j'en ai six, offert par Paul, à boire avant 2030 »), puis « J'ai fini » : l'IA (Gemini) range chaque information dans la bonne case — nom, couleur, millésime, « à boire jusqu'en », appellation, région, cépage, nombre de bouteilles, prix par bouteille, note, commentaires. On vérifie, puis on enregistre.
+- « J'ai compris : … » affiche le texte compris, modifiable ; « Remplir la fiche » le renvoie. « Reparler » complète ou corrige (« non, c'est 2015 »). Sans micro (refusé ou indisponible), on peut dicter avec le micro du clavier ou écrire.
+- Ce que la voix remplit remplace la valeur du champ, sauf ce qui a été tapé à la main dans la fiche. Rien n'est enregistré sans « Enregistrer ».
+
+### Modifié
+- Le réglage s'appelle « Lecture automatique (photo et voix) » ; il prévient que la photo ou ce qui est dit est envoyé à Google.
+
+### Corrigé
+- La lecture d'étiquette envoyait d'abord une demande refusée par Google (couleur vide dans le schéma) avant de réessayer : elle aboutit maintenant du premier coup.
+
 ## [0.4.3] - 2026-11-22
 
 ### Ajouté
