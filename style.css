@@ -59,7 +59,8 @@ input, select, textarea { font: inherit; font-size: 17px; color: var(--text); -w
 #sheet.tall { max-height: calc(100vh - var(--sat) - 76px); max-height: calc(100dvh - var(--sat) - 76px); }
 @keyframes up { from { transform: translateY(100%); } to { transform: none; } }
 #sheetHead { display: flex; align-items: flex-start; padding: 16px 16px 6px; gap: 10px; }
-#sheetTitle { flex: 1; font-size: 22px; font-weight: 700; line-height: 1.2; }
+/* padding-top : la 1re ligne du titre (22 × 1,2 ≈ 26 px) centrée sur le bouton ✕ de 44 px, même si le titre passe sur plusieurs lignes */
+#sheetTitle { flex: 1; font-size: 22px; font-weight: 700; line-height: 1.2; padding-top: 9px; }
 /* Icônes ☰ et ✕ en SVG, centrées par flex : les caractères Unicode tombaient décentrés selon la police de l'iPhone */
 #menuBtn, #sheetClose { display: flex; align-items: center; justify-content: center; padding: 0; }
 #menuBtn svg, #sheetClose svg { display: block; }
@@ -189,7 +190,7 @@ body.adjusting #adjustBar { top: calc(var(--sat) + 12px); }
   /* filet doré sur le bord arrondi : la feuille se détache du bleu de la scène, très proche */
   box-shadow: inset 0 1px 0 rgba(201, 169, 97, .55), 0 -8px 30px rgba(4, 16, 36, .6); }
 #sheet.cave #sheetTitle { font-family: Georgia, "Times New Roman", serif; font-weight: 400; font-size: 27px; letter-spacing: .02em;
-  text-align: center; padding-left: 54px; }   /* décalé de la largeur du bouton ✕ (44 px) + l'écart (10 px) pour rester centré */
+  text-align: center; padding-left: 54px; padding-top: 6px; }   /* décalé de la largeur du bouton ✕ (44 px) + l'écart (10 px) pour rester centré */
 #sheet.cave #sheetClose { background: var(--night-2); color: var(--gold); }
 .cave-sum { text-align: center; color: var(--gold); font-size: 15px; margin: 0 0 6px; }
 .cave-sum::before { content: ''; display: block; width: 44px; height: 1px; background: var(--gold); margin: 0 auto 10px; }
