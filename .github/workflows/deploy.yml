@@ -27,6 +27,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}
+      - name: Le tag correspond au numéro de version (sinon les téléphones ne verraient pas la mise à jour)
+        env:
+          TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}
+        run: |
+          V=$(sed -n "s/^self.APP_VERSION = '\([0-9.]*\)';.*/\1/p" version.js)
+          if [ "$TAG" != "v$V" ]; then echo "Le tag $TAG ne correspond pas à la version $V de version.js : changer le numéro avant de publier."; exit 1; fi
       - uses: actions/setup-node@v4
         with:
           node-version: 22
