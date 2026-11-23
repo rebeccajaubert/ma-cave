@@ -1257,7 +1257,8 @@ async function runVoice({ audio, text }) {
       if (!$('voiceText')) showVoiceZone(text || '', 'Vous pouvez aussi dicter avec le micro du clavier ou écrire ci-dessous.');
     }
   } finally {
-    delete form.dataset.scanning; btns.forEach((b) => { b.disabled = false; });
+    // Pendant une écoute (texte envoyé en parallèle), les boutons photo restent désactivés : voir PHOTO_ACTS
+    delete form.dataset.scanning; btns.forEach((b) => { if (!(voice && b.matches(PHOTO_ACTS))) b.disabled = false; });
   }
 }
 
