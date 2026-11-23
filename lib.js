@@ -421,3 +421,58 @@ export function moveSeparator(sizes, i, delta, accept) {
   }
   return out;
 }
+
+// ---------- Protection des données : copie avant mise à jour, rappel de sauvegarde ----------
+
+/** Une journée en millisecondes. */
+export const DAY_MS = 24 * 3600 * 1000;
+
+/**
+ * Faut-il copier les fiches avant de lancer une nouvelle version ? Oui au premier lancement d'une version
+ * différente de la dernière lancée (elle peut transformer les fiches au démarrage), s'il y a de vraies fiches.
+ * @param {string|null} lastVersion dernière version lancée sur l'appareil (null : jamais notée)
+ * @param {string} currentVersion version qui démarre
+ * @param {number} realCount nombre de fiches qui ne sont pas des exemples
+ * @returns {boolean}
+ */
+export function needsSnapshot(lastVersion, currentVersion, realCount) {
+  return realCount > 0 && lastVersion !== currentVersion;
+}
+
+/**
+ * Copies à supprimer pour n'en garder que les `keep` plus récentes (numéros croissants : la plus récente a le
+ * plus grand). On en garde plusieurs : si une version abîmait les fiches, la copie prise au lancement de la
+ * version suivante serait déjà abîmée, la précédente non.
+ * @param {number[]} ids numéros des copies
+ * @param {number} keep
+ * @returns {number[]} numéros des copies les plus anciennes en trop
+ */
+export function copiesToDrop(ids, keep) {
+  return [...ids].sort((a, b) => b - a).slice(Math.max(0, keep));
+}
+
+/**
+ * Faut-il rappeler de faire une sauvegarde ? Si de vraies fiches n'ont jamais été sauvegardées, ou pas
+ * depuis 30 jours, sans le rappeler plus d'une fois par semaine.
+ * @param {{now: number, lastBackup: *, lastReminder: *, realCount: number}} s dates en millisecondes (ou null)
+ * @returns {boolean}
+ */
+export function backupReminderDue({ now, lastBackup, lastReminder, realCount }) {
+  if (!(realCount > 0)) return false;
+  const since = (t) => (Number.isFinite(Number(t)) && t !== null && t !== '' ? now - Number(t) : Infinity);
+  return since(lastBackup) >= 30 * DAY_MS && since(lastReminder) >= 7 * DAY_MS;
+}
+
+/**
+ * Dernière version lancée sur l'appareil : celle notée dans localStorage, sinon (stockage bloqué ou effacé)
+ * la version de la plus récente copie prise pour une nouvelle version. Sans ce repli, un localStorage bloqué
+ * ferait une copie à chaque lancement, et les copies d'avant la mise à jour seraient vite chassées.
+ * @param {string|null} stored valeur notée (null si absente ou illisible)
+ * @param {{id: number, raison?: string, vers?: string}[]} summaries résumés des copies
+ * @returns {string|null}
+ */
+export function lastLaunchedVersion(stored, summaries) {
+  if (stored) return stored;
+  const last = [...summaries].filter((c) => c.raison === 'version' && c.vers).sort((a, b) => b.id - a.id)[0];
+  return last ? last.vers : null;
+}

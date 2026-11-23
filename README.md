@@ -20,6 +20,7 @@ Application web installable (PWA) : pas d'App Store, pas de compte, gratuite. Le
 - **Suggestions de saisie** à partir des fiches existantes.
 - **Lecture automatique de l'étiquette** par photo (optionnelle, voir ci-dessous).
 - **Sauvegarde et restauration** en fichier, **dimensions réglables**, **mode hors-ligne**.
+- **Protection des données** : copie de sécurité sur le téléphone avant chaque nouvelle version et avant chaque restauration (menu → *Revenir en arrière*), rappel de sauvegarde après un mois, stockage protégé demandé à l'iPhone.
 
 Un emplacement est soit *enregistré* (une fiche existe : la bouteille apparaît dans le casier), soit *non enregistré* (rien n'apparaît ; au toucher, la bouteille sort sans étiquette et propose de créer sa fiche).
 
@@ -66,7 +67,9 @@ Il n'y a volontairement **pas de fichier `.env`** : l'app n'a pas de serveur, et
 
 ## Données et confidentialité
 
-- Les fiches sont dans **IndexedDB** (navigateur de l'appareil). Supprimer l'icône ou effacer les données du site les efface : faire une **sauvegarde** (menu → *Sauvegarder mes données*) de temps en temps.
+- Les fiches sont dans **IndexedDB** (navigateur de l'appareil). Supprimer l'icône ou effacer les données du site les efface : faire une **sauvegarde** (menu → *Sauvegarder mes données*) de temps en temps ; l'app le rappelle si la dernière date de plus d'un mois (au plus une fois par semaine).
+- Une mise à jour ne touche pas aux fiches. Au premier lancement d'une nouvelle version, l'app copie d'abord fiches et rangement dans une base à part (`cave-a-vin-copies`, les 4 plus récentes) ; si la copie échoue, elle ne transforme pas les fiches. Restaurer (fichier ou copie) copie aussi l'état actuel avant de le remplacer.
+- Au démarrage, l'app demande à l'iPhone de ne pas vider son stockage pour faire de la place (`navigator.storage.persist()`) ; la réponse est affichée dans le menu.
 - Chaque ajout, modification ou suppression est écrit immédiatement sur l'appareil.
 - Rien n'est envoyé en ligne, sauf la photo d'étiquette si la lecture automatique est activée.
 
@@ -88,8 +91,8 @@ Ajouter `?debug` à l'adresse expose `window.__cave` pour les tests dans le navi
 |---|---|
 | `index.html`, `style.css` | Page, interface (conçue pour un public peu à l'aise avec le numérique : gros boutons, textes clairs) |
 | `app.js` | Scène 3D (Three.js), interactions, fiches, menu |
-| `lib.js` | Fonctions pures (échappement HTML, identifiants, dimensions, quantités, suggestions ; pile des cases maçonnées, places en quinconce, séparations) |
-| `db.js` | Stockage local IndexedDB |
+| `lib.js` | Fonctions pures (échappement HTML, identifiants, dimensions, quantités, suggestions ; pile des cases maçonnées, places en quinconce, séparations ; copies de sécurité et rappel de sauvegarde) |
+| `db.js` | Stockage local IndexedDB (fiches, et copies de sécurité dans une base à part) |
 | `scan.js` | Lecture d'étiquette via Gemini (clé, requête, validation de la réponse) |
 | `version.js` | Numéro de version, source unique |
 | `sw.js`, `manifest.webmanifest`, `icons/` | Mode hors-ligne et installation iPhone |

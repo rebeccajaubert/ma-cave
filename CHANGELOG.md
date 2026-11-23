@@ -3,6 +3,14 @@
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), versionnement [sémantique](https://semver.org/lang/fr/) :
 `MAJEUR.MINEUR.CORRECTIF`. Le numéro de version est défini dans `version.js` (voir README, « Publier une version »).
 
+## [0.4.3] - 2026-11-22
+
+### Ajouté
+- **Copie de sécurité avant chaque nouvelle version** : au premier lancement d'une nouvelle version, l'application copie les bouteilles et le rangement sur le téléphone avant toute transformation des fiches. Si la copie échoue, rien n'est transformé. Les 4 copies les plus récentes sont gardées (si le téléphone manque de place, les plus anciennes sont supprimées pour faire la nouvelle). Si elle échoue quand même, l'application le dit et propose une sauvegarde en fichier.
+- **Revenir en arrière** (menu, s'il existe une copie) : revenir à l'état d'avant une mise à jour ou d'avant une restauration. Restaurer une sauvegarde ou une copie garde d'abord une copie de l'état actuel.
+- **Rappel de sauvegarde** : si les bouteilles n'ont jamais été sauvegardées, ou pas depuis un mois, l'application le propose au lancement (au plus une fois par semaine).
+- Le menu indique la date de la dernière sauvegarde et si l'iPhone protège le stockage de l'application (il ne le videra pas pour faire de la place).
+
 ## [0.4.2] - 2026-11-21
 
 ### Corrigé

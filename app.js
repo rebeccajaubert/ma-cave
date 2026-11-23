@@ -1,6 +1,6 @@
 import * as THREE from './vendor/three.module.min.js';
-import { esc, clamp, norm, RACK_ORDER, RACK_NAMES, slotId, parseId, isValidId, DEFAULT_CONFIG, CONFIG_REV, STYLES, rackGrid, casePlaces, pileOf, BOTTLE_D, moveSeparator, caseIdOf, newBottleId, pushToPile, removeFromPile, undoRemoval, normalizePile, migrateCaseRecords, placeLost, DEFAULT_STYLE, rackLimits, normalizeConfig, rackSizes, rackSize, meters, recordsIn, isNewerVersion, LEGACY_CONFIG, needsLegacyConfig, realRecordCount, shouldResetDemoToVerdelot, cellLayout, drinkSoon, qty, totalBottles, suggestions, findKnownWine, inheritableFields } from './lib.js';
-import { openStore } from './db.js';
+import { esc, clamp, norm, RACK_ORDER, RACK_NAMES, slotId, parseId, isValidId, DEFAULT_CONFIG, CONFIG_REV, STYLES, rackGrid, casePlaces, pileOf, BOTTLE_D, moveSeparator, caseIdOf, newBottleId, pushToPile, removeFromPile, undoRemoval, normalizePile, migrateCaseRecords, placeLost, DEFAULT_STYLE, rackLimits, normalizeConfig, rackSizes, rackSize, meters, recordsIn, isNewerVersion, LEGACY_CONFIG, needsLegacyConfig, realRecordCount, shouldResetDemoToVerdelot, cellLayout, drinkSoon, qty, totalBottles, suggestions, findKnownWine, inheritableFields, needsSnapshot, copiesToDrop, backupReminderDue, lastLaunchedVersion, DAY_MS } from './lib.js';
+import { openStore, openCopies } from './db.js';
 import { getApiKey, setApiKey, clearApiKey, cleanApiKey, scanLabel, testApiKey, scanErrorMessage } from './scan.js';
 
 /* ============================================================
@@ -1203,6 +1203,8 @@ $('sheetBody').addEventListener('click', async (e) => {
   else if (act === 'config') showConfig();
   else if (act === 'export') exportData();
   else if (act === 'import') $('importInput').click();
+  else if (act === 'snapshots') showCopies();
+  else if (act === 'snap-restore') await restoreCopy(e.target.closest('[data-snap]')?.dataset.snap);
   else if (act === 'install') showInstall();
   else if (act === 'menu') showMenu();
   else if (act === 'config-focus') showConfig(e.target.closest('[data-rack]')?.dataset.rack);
@@ -1401,7 +1403,9 @@ function showMenu() {
       <button class="btn block" data-act="scan-settings">Lecture des étiquettes${getApiKey() ? ' (activée)' : ''}</button>
       <button class="btn block" data-act="config">Rangement de la cave</button>
       <button class="btn block" data-act="export">Sauvegarder mes données</button>
+      <p class="help">${safetyLine()}</p>
       <button class="btn block" data-act="import">Restaurer une sauvegarde</button>
+      ${copiesInfo.length ? '<button class="btn block" data-act="snapshots">Revenir en arrière (copies de sécurité)</button>' : ''}
       <button class="btn block" data-act="install">Installer sur l'iPhone</button>
       <button class="btn block" data-act="help">Mode d'emploi</button>
       ${[...records.values()].some((b) => b.demo) ? '<button class="btn danger block" data-act="cleardemo">Test : retirer les bouteilles d\'exemple</button>' : '<button class="btn block" data-act="demo">Test : ajouter des bouteilles d\'exemple</button>'}
@@ -1664,31 +1668,103 @@ async function exportData() {
   const data = JSON.stringify({ app: 'ma-cave', version: 2, appVersion: APP_VERSION, date: new Date().toISOString(), config, bouteilles: [...records.values()] });
   const name = `ma-cave-${new Date().toISOString().slice(0, 10)}.json`;
   const file = new File([data], name, { type: 'application/json' });
-  try { if (navigator.canShare?.({ files: [file] })) { await navigator.share({ files: [file], title: 'Sauvegarde Ma Cave' }); return; } } catch (e) { if (e.name === 'AbortError') return; }
+  // Date de la dernière sauvegarde (pour le rappel) : seulement si le partage a abouti ou le fichier est parti
+  const done = () => { try { localStorage.setItem(BACKUP_KEY, String(Date.now())); } catch { /* stockage bloqué */ } };
+  try { if (navigator.canShare?.({ files: [file] })) { await navigator.share({ files: [file], title: 'Sauvegarde Ma Cave' }); done(); toast('Sauvegarde faite'); return; } } catch (e) { if (e.name === 'AbortError') return; }
   const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = name; a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 5000); toast('Sauvegarde téléchargée');
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000); done(); toast('Sauvegarde téléchargée');
 }
 $('importInput').addEventListener('change', async (e) => {
   const file = e.target.files[0]; e.target.value = ''; if (!file) return;
-  try {
-    const d = JSON.parse(await file.text());
-    if (!Array.isArray(d.bouteilles)) throw new Error('format');
-    const list = d.bouteilles.filter((b) => b && !b.vide && isValidId(b.id))
-      .map((b) => ({ ...b, ...(b.pile != null ? { pile: Math.max(0, parseInt(b.pile) || 0) } : {}),   // rang : un nombre, jamais du texte
-        photo: typeof b.photo === 'string' && b.photo.startsWith('data:image/') ? b.photo : null }));
-    if (!store) return toast('Stockage indisponible : impossible de restaurer');
-    // Restaurer remplace tout et ne peut pas être annulé : on le dit clairement, avec le nombre de fiches perdues.
-    const real = realRecordCount([...records.values()]);
-    const warn = real ? `Les ${real} fiche(s) actuellement sur cet appareil seront effacées définitivement et remplacées par celles de la sauvegarde. Cela ne peut pas être annulé.\n\nConseil : faites d'abord « Sauvegarder mes données ».`
-      : 'Le rangement et les fiches de cet appareil seront remplacés par ceux de la sauvegarde.';
-    if (!await ask(`Restaurer cette sauvegarde (${list.length} fiche(s)) ?\n\n${warn}`, 'Remplacer')) return;
-    if (d.config) {   // réglage d'abord : s'il ne peut pas être écrit, on n'a encore rien remplacé
-      try { localStorage.setItem(CONFIG_KEY, JSON.stringify(normalizeConfig(d.config))); } catch { return toast('Impossible d\'enregistrer le réglage sur cet appareil : rien n\'a été restauré'); }
-    }
-    if (!await persist((st) => st.replaceAll(list))) return;
-    location.reload();
-  } catch { toast('Ce fichier n\'est pas une sauvegarde valide'); }
+  let d;
+  try { d = JSON.parse(await file.text()); if (!Array.isArray(d.bouteilles)) throw new Error('format'); } catch { return toast('Ce fichier n\'est pas une sauvegarde valide'); }
+  await restoreData(d, 'cette sauvegarde');
 });
+/**
+ * Remplace les fiches et le rangement par ceux d'une sauvegarde (fichier ou copie de sécurité).
+ * L'état actuel est d'abord copié sur l'appareil : si cette copie échoue, rien n'est remplacé.
+ */
+async function restoreData(d, what) {
+  const list = (Array.isArray(d.bouteilles) ? d.bouteilles : []).filter((b) => b && !b.vide && isValidId(b.id))
+    .map((b) => ({ ...b, ...(b.pile != null ? { pile: Math.max(0, parseInt(b.pile) || 0) } : {}),   // rang : un nombre, jamais du texte
+      photo: typeof b.photo === 'string' && b.photo.startsWith('data:image/') ? b.photo : null }));
+  if (!store) return toast('Stockage indisponible : impossible de restaurer');
+  const current = [...records.values()], real = realRecordCount(current);
+  // Compte en bouteilles, sans les exemples (sinon « 1039 fiches » pour une seule vraie bouteille)
+  const count = (l) => { const n = totalBottles(l.filter((b) => !b.demo && !b.vide)); return `${n} bouteille${n > 1 ? 's' : ''}${l.some((b) => b.demo) ? ', plus des exemples' : ''}`; };
+  const warn = real ? `Le contenu actuel de ce téléphone (${count(current)}) sera remplacé. Une copie de l'état actuel est gardée (menu, « Revenir en arrière »).`
+    : 'Le rangement et les fiches de ce téléphone seront remplacés.';
+  if (!await ask(`Revenir à ${what} : ${count(list)} ?\n\n${warn}`, 'Remplacer')) return;
+  if (real && !await takeCopy({ raison: 'restauration' }, config, current)) return toast('Impossible de copier l\'état actuel : rien n\'a été remplacé');
+  const oldConfig = lsGet(CONFIG_KEY);
+  if (d.config) {   // réglage d'abord : s'il ne peut pas être écrit, on n'a encore rien remplacé
+    try { localStorage.setItem(CONFIG_KEY, JSON.stringify(normalizeConfig(d.config))); } catch { return toast('Impossible d\'enregistrer le réglage sur cet appareil : rien n\'a été restauré'); }
+  }
+  if (!await persist((st) => st.replaceAll(list))) {   // fiches non remplacées : on remet aussi l'ancien réglage
+    if (d.config && oldConfig !== null) lsSet(CONFIG_KEY, oldConfig);
+    return;
+  }
+  location.reload();
+}
+
+// ---------- Copies de sécurité (sur l'appareil, avant chaque nouvelle version et avant une restauration) ----------
+const KEEP_COPIES = 4;                              // plusieurs : la copie d'une version qui aurait abîmé les fiches ne chasse pas la bonne
+const VERSION_KEY = 'cave-version-lancee';         // dernière version lancée sur cet appareil
+const BACKUP_KEY = 'cave-derniere-sauvegarde';     // date (ms) de la dernière sauvegarde en fichier
+const REMINDER_KEY = 'cave-dernier-rappel';        // date (ms) du dernier rappel de sauvegarde
+let copiesInfo = [];                                // résumé des copies gardées (sans les fiches), pour le menu
+let storageProtected = null;                        // réponse de l'iPhone à « protéger le stockage » (null : inconnue)
+const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); return true; } catch { return false; } };
+
+/**
+ * Copie fiches + rangement dans la base des copies ; renvoie true seulement si la copie est réellement écrite.
+ * Si l'écriture échoue (téléphone plein : les photos pèsent lourd), on ne garde que la copie la plus récente
+ * et on réessaie une fois, plutôt que de rester bloqué à chaque lancement.
+ */
+async function takeCopy(info, cfg, list) {
+  let copies;
+  try { copies = await openCopies(); } catch (e) { console.error(e); return false; }
+  const date = new Date().toISOString();
+  const write = () => copies.add({ app: 'ma-cave', version: 2, ...info, date, config: cfg, bouteilles: list },
+    { ...info, date, n: totalBottles(list.filter((b) => !b.demo && !b.vide)) }, (ids) => copiesToDrop(ids, KEEP_COPIES));
+  try { await write(); } catch (e) {
+    console.error(e);
+    try { await copies.trim((ids) => copiesToDrop(ids, 1)); await write(); } catch (e2) { console.error(e2); await loadCopiesInfo(copies); return false; }
+  }
+  await loadCopiesInfo(copies);
+  return true;
+}
+async function loadCopiesInfo(copies) {
+  try {
+    copiesInfo = (await (copies || await openCopies()).summaries()).sort((a, b) => b.id - a.id);
+  } catch (e) { console.error(e); copiesInfo = []; }
+}
+function copyLabel(c) {
+  const d = new Date(c.date), when = `${d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })} à ${d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
+  const why = c.raison === 'restauration' ? 'Avant une restauration' : `Avant la version ${c.vers || '?'}`;
+  return { why, sub: `${when} · ${c.n} bouteille${c.n > 1 ? 's' : ''}` };
+}
+function showCopies() {
+  openSheet('Revenir en arrière', `
+    <p class="help">Ce téléphone garde une copie de vos bouteilles avant chaque nouvelle version de l'application et avant chaque restauration (les ${KEEP_COPIES} plus récentes). Touchez une copie pour y revenir.</p>
+    <div class="list">${copiesInfo.length ? copiesInfo.map((c) => { const l = copyLabel(c); return `<button class="row" data-act="snap-restore" data-snap="${esc(String(c.id))}">
+      <span class="main"><div class="n">${esc(l.why)}</div><div class="s">${esc(l.sub)}</div></span></button>`; }).join('') : '<div class="empty">Aucune copie pour l\'instant.</div>'}</div>
+    <p class="help">Ces copies restent sur ce téléphone : elles ne remplacent pas « Sauvegarder mes données », qui protège aussi d'une perte du téléphone.</p>
+    <div class="btns"><button class="btn block" data-act="menu">Retour</button></div>`, true);
+}
+async function restoreCopy(id) {
+  let copy;
+  try { copy = await (await openCopies()).get(Number(id)); } catch (e) { console.error(e); }
+  if (!copy) return toast('Copie introuvable');
+  await restoreData(copy, `la copie « ${copyLabel(copy).why.toLowerCase()} »`);
+}
+/** Texte du menu : date de la dernière sauvegarde et protection du stockage. */
+function safetyLine() {
+  const last = Number(lsGet(BACKUP_KEY)), days = last ? Math.floor((Date.now() - last) / DAY_MS) : null;
+  const when = days === null ? 'jamais' : days < 1 ? 'aujourd\'hui' : days < 2 ? 'hier' : `il y a ${days} jours`;
+  return `Dernière sauvegarde : <b>${when}</b>${storageProtected === null ? '' : ` · Stockage protégé par l'iPhone : <b>${storageProtected ? 'oui' : 'non'}</b>${storageProtected ? '' : ' (ouvrez l\'app depuis son icône sur l\'écran d\'accueil)'}`}`;
+}
 
 // ---------- Bouteilles d'exemple (uniquement pour tester) ----------
 const DEMO = [
@@ -1780,6 +1856,22 @@ if (new URLSearchParams(location.search).has('debug')) window.__cave = { tapSlot
     hasStoredConfig = !!raw; storedConfig = raw ? JSON.parse(raw) : null;
   } catch { /* stockage bloqué ou réglage illisible */ }
   const all = [...records.values()];
+  // Nouvelle version : copie des fiches AVANT toute transformation au démarrage. Si la copie échoue, on ne
+  // transforme rien (les fiches restent telles quelles), on demande une sauvegarde en fichier et on réessaiera
+  // au prochain lancement ; une sauvegarde en fichier faite depuis moins d'un jour suffit alors à continuer.
+  await loadCopiesInfo();   // pour le bouton « Revenir en arrière » et la dernière version lancée
+  const lastVersion = lastLaunchedVersion(lsGet(VERSION_KEY), copiesInfo);
+  let copyOk = true;
+  if (store && needsSnapshot(lastVersion, APP_VERSION, realRecordCount(all))) {
+    toast('Copie de sécurité de vos bouteilles…');
+    copyOk = await takeCopy({ raison: 'version', de: lastVersion, vers: APP_VERSION }, storedConfig || config, all);
+    if (!copyOk && Date.now() - Number(lsGet(BACKUP_KEY) || 0) < DAY_MS) copyOk = true;
+    if (!copyOk) {
+      ask('La copie de sécurité d\'avant la mise à jour n\'a pas pu être faite (le téléphone manque peut-être de place). Vos bouteilles ne sont pas touchées. Faites une sauvegarde en fichier : la mise à jour se terminera au prochain lancement.',
+        'Sauvegarder', 'Plus tard').then((yes) => { if (yes) exportData(); });
+    }
+  }
+  if (copyOk) lsSet(VERSION_KEY, APP_VERSION);
   if (store && shouldResetDemoToVerdelot(storedConfig, all)) {
     // Appareil de test (seulement des bouteilles d'exemple) resté sur l'ancien rangement : format Verdelot,
     // avec des exemples régénérés à ce format au prochain lancement.
@@ -1800,13 +1892,20 @@ if (new URLSearchParams(location.search).has('debug')) window.__cave = { tapSlot
     // (avec des fiches, mais toujours sans réglage) croirait à un appareil de la 0.2.0.
     try { localStorage.setItem(CONFIG_KEY, JSON.stringify(config)); } catch { /* stockage bloqué : rien à faire */ }
   }
-  if (store && records.size) await upgradeCases().catch(console.error);
+  if (store && records.size && copyOk) await upgradeCases().catch(console.error);
   let demoDone = true; try { demoDone = !!localStorage.getItem('cave-demo'); } catch { /* stockage bloqué */ }
   if (store && !records.size && !demoDone) { try { localStorage.setItem('cave-demo', '1'); localStorage.setItem('cave-demo-v4', '1'); } catch { /* idem */ } await seedDemo().catch(console.error); }
   rebuildBottles(); applyVisibility(); requestAnimationFrame(frame);
   let welcomed = false; try { welcomed = !!localStorage.getItem('cave-bienvenue'); } catch { /* stockage bloqué */ }
   if (!welcomed) showWelcome();
-  navigator.storage?.persist?.().catch(() => {});
+  else if (copyOk && backupReminderDue({ now: Date.now(), lastBackup: lsGet(BACKUP_KEY), lastReminder: lsGet(REMINDER_KEY), realCount: realRecordCount([...records.values()]) })) {
+    lsSet(REMINDER_KEY, String(Date.now()));
+    const last = lsGet(BACKUP_KEY);
+    ask(`Pensez à sauvegarder vos bouteilles : ${last ? 'la dernière sauvegarde date de plus d\'un mois' : 'elles n\'ont encore jamais été sauvegardées'}. La sauvegarde garde vos fiches même si ce téléphone est perdu ou changé.`,
+      'Sauvegarder', 'Plus tard').then((yes) => { if (yes) exportData(); });
+  }
+  // Demande à l'iPhone de ne jamais vider ce stockage pour faire de la place ; sa réponse est montrée dans le menu
+  navigator.storage?.persist?.().then((ok) => { storageProtected = !!ok; }).catch(() => {});
   if (location.search.includes('maj=')) {   // retour d'une mise à jour forcée : on dit si elle a bien pris
     history.replaceState(null, '', './');
     let expected = ''; try { expected = sessionStorage.getItem('cave-maj-attendue') || ''; sessionStorage.removeItem('cave-maj-attendue'); } catch { /* sans stockage */ }
