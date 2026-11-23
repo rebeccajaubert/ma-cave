@@ -16,7 +16,7 @@ Application web installable (PWA) : pas d'App Store, pas de compte, gratuite. Le
 - **Plusieurs bouteilles par emplacement** (− / +) dans les autres rangements, et **même vin à plusieurs endroits** (« J'ai la même ailleurs »).
 - **Vider** une case (depuis sa fiche), une colonne, une rangée ou tout un casier (menu → *Rangement de la cave* → *Gérer*), avec **Annuler** pendant 10 secondes.
 - **À boire bientôt**, **filtre par couleur**, **mode d'emploi** au premier lancement.
-- **Menu** (☰) simple, bordeaux et or : *Ma cave* (Mes bouteilles, À boire bientôt, Rangement de la cave), *Mes données* (Sauvegarder, Réglages, Mode d'emploi). Ce qui sert rarement est dans **Réglages** : lecture automatique, restaurer une sauvegarde, revenir en arrière, installer sur l'iPhone, mettre à jour.
+- **Menu** (☰) simple, bleu nuit et or : *Ma cave* (Mes bouteilles, À boire bientôt, Rangement de la cave), *Mes données* (Sauvegarder, Réglages, Mode d'emploi). Ce qui sert rarement est dans **Réglages** : lecture automatique, restaurer une sauvegarde, revenir en arrière, installer sur l'iPhone, mettre à jour.
 - **Recherche** par nom, année, appellation, région… ; les résultats s'entourent d'un anneau orange dans la cave ; en touchant un résultat, seules les bouteilles de ce vin restent entourées.
 - **Suggestions de saisie** à partir des fiches existantes.
 - **Lecture automatique** (optionnelle, voir ci-dessous) : par **photo** de l'étiquette, ou **à la voix** (« 🎤 Parler » : on décrit la bouteille naturellement, l'IA range chaque information dans la bonne case ; texte compris modifiable, dictée du clavier en secours). On vérifie toujours avant d'enregistrer.

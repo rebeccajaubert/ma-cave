@@ -6,7 +6,7 @@ Le menu actuel aligne une douzaine de boutons identiques, sans hiérarchie : l'u
 ## Objectifs
 - Menu principal court (5 entrées), groupé en sections titrées, gros éléments faciles à toucher.
 - Ce qui sert rarement passe dans un écran « Réglages ».
-- Style sombre bordeaux, texte crème, filets dorés, titre à empattements.
+- Style sombre bleu nuit (assorti au bleu de la cave ; le bordeaux d'abord retenu a été écarté par Rebecca après essai), texte crème, filets dorés, titre à empattements.
 
 ## Hors champ
 - Les autres écrans (liste des bouteilles, fiches, formulaires, mode d'emploi…) gardent leur style clair actuel (choix 1 de Rebecca).
@@ -22,7 +22,7 @@ Le menu actuel aligne une douzaine de boutons identiques, sans hiérarchie : l'u
 - Portée du style : menu + Réglages seulement (retenue), tous les écrans du menu, toute l'app (déconseillée : formulaires moins lisibles).
 
 ## Le design
-Menu principal (fiche du bas, fond bordeaux très foncé) :
+Menu principal (fiche du bas, fond bleu nuit) :
 ```
             Ma Cave            ← nom de la cave, police à empattements
              ────              ← filet doré
@@ -53,7 +53,7 @@ Les écrans ouverts depuis Réglages (lecture automatique, copies de sécurité,
 
 ## Laissé au réalisateur (choix de Claude)
 - Icônes : petits pictogrammes au trait en SVG en ligne (couleur dorée), pas de police d'icônes.
-- Couleurs : fond #2a0f17, texte #f3e9d8, or #c9a961, séparateurs #5a2a35 ; contrastes vérifiés (crème sur bordeaux ≈ 14:1, or ≈ 7:1).
+- Couleurs : fond #0a1d38, texte #f3e9d8, or #c9a961, séparateurs #26436e ; contrastes vérifiés (crème sur bleu nuit ≈ 14:1, or ≈ 7,5:1).
 - Style limité par une classe sur `#sheet` (ex. `cave`), posée par `showMenu`/`showSettings` et retirée par `openSheet` pour les autres écrans.
 - La phrase « 142 bouteilles · 18 places libres » (singulier/pluriel) est une fonction pure de `lib.js`, testée.
 - Version : 1.0.0 (à confirmer par Rebecca), avec les corrections de `chantier/defauts-et-tests` fusionnées avant le passage de version.

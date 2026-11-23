@@ -6,7 +6,7 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), ver
 ## [1.0.0] - 2026-11-23
 
 ### Ajouté
-- **Nouveau menu « Cave sombre »**, plus simple : bordeaux, crème et or, en deux sections. « Ma cave » : Mes bouteilles, À boire bientôt, Rangement de la cave. « Mes données » : Sauvegarder (avec la date de la dernière sauvegarde), Réglages, Mode d'emploi. En tête, le nom de la cave et « 142 bouteilles · 18 places libres » ; la version en bas.
+- **Nouveau menu « Cave sombre »**, plus simple : bleu nuit (assorti à la cave), crème et or, en deux sections. « Ma cave » : Mes bouteilles, À boire bientôt, Rangement de la cave. « Mes données » : Sauvegarder (avec la date de la dernière sauvegarde), Réglages, Mode d'emploi. En tête, le nom de la cave et « 142 bouteilles · 18 places libres » ; la version en bas.
 - **Écran « Réglages »** pour ce qui sert rarement : lecture automatique (photo et voix), restaurer une sauvegarde, revenir en arrière, installer sur l'iPhone, mettre à jour l'application, état du stockage protégé. « Retour » ramène des écrans ouverts depuis Réglages à Réglages.
 - « Annuler » après « Les ranger dans cette case » (fiches « à ranger ») : les bouteilles rangées repartent et l'ancienne fiche revient. Refusé, sans rien toucher, si une de ces bouteilles a été modifiée, bue ou déplacée entre-temps.
 
