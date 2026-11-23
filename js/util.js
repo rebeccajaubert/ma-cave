@@ -36,8 +36,30 @@ export const APP_FILES = self.APP_FILES || [];         // idem : fichiers de l'a
 export function ask(message, okLabel = 'Continuer', cancelLabel = 'Annuler') {
   return new Promise((res) => {
     $('dialogText').textContent = message; $('dialogOk').textContent = okLabel; $('dialogCancel').textContent = cancelLabel; $('dialog').hidden = false;
+    if ($('dialogAlt')) $('dialogAlt').hidden = true;   // le troisième choix n'existe que dans choose()
     const done = (v) => { $('dialog').hidden = true; $('dialogOk').onclick = $('dialogCancel').onclick = null; res(v); };
     $('dialogOk').onclick = () => done(true); $('dialogCancel').onclick = () => done(false);
+  });
+}
+/**
+ * Demande à deux ou trois choix (par exemple « Empiler », « Échanger », « Annuler »). Les boutons sont alors l'un
+ * sous l'autre, en pleine largeur, pour rester lisibles et faciles à toucher.
+ * @param {string} message
+ * @param {{ok: string, alt?: string|null, cancel?: string}} labels `alt` absent : simple demande à deux choix
+ * @returns {Promise<'ok'|'alt'|null>} null : annulé
+ */
+export async function choose(message, { ok, alt = null, cancel = 'Annuler' }) {
+  // Page d'une ancienne version (sans le troisième bouton) : on se rabat sur une demande à deux choix
+  if (!alt || !$('dialogAlt')) return (await ask(message, ok, cancel)) ? 'ok' : null;
+  return new Promise((res) => {
+    const box = $('dialogBox'), altBtn = $('dialogAlt');
+    $('dialogText').textContent = message; $('dialogOk').textContent = ok; altBtn.textContent = alt; $('dialogCancel').textContent = cancel;
+    altBtn.hidden = false; box.classList.add('three'); $('dialog').hidden = false;
+    const done = (v) => {
+      $('dialog').hidden = true; altBtn.hidden = true; box.classList.remove('three');
+      $('dialogOk').onclick = $('dialogCancel').onclick = altBtn.onclick = null; res(v);
+    };
+    $('dialogOk').onclick = () => done('ok'); altBtn.onclick = () => done('alt'); $('dialogCancel').onclick = () => done(null);
   });
 }
 export function toast(msg) { const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => (t.hidden = true), 2000); }

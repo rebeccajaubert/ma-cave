@@ -5,6 +5,9 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), ver
 
 ## [Non publié]
 
+### Ajouté
+- **Déplacer toute une case** : dans la fiche d'une case maçonnée, « Déplacer cette case », puis toucher la case d'arrivée. Toutes les bouteilles y vont, dans le même ordre. Si la case d'arrivée contient déjà des bouteilles, l'app demande : « Empiler » (par-dessus, seulement s'il y a assez de place), « Échanger les deux cases » ou « Annuler ». Tout est enregistré d'un coup (jamais à moitié), et « Annuler » remet les deux cases comme avant, tant qu'aucune n'a changé.
+
 ### Technique
 - **Code réorganisé**, sans changement visible : le code est rangé dans `js/` (l'ancien `app.js` de 2 100 lignes est découpé en modules : scène 3D, gestes, fiche, photo et voix, recherche, menu, sauvegardes…) et la feuille de style dans `css/`. Carte des modules en tête de `js/util.js`.
 - De petits fichiers relais restent aux anciennes adresses pour qu'un téléphone encore en 1.0.0 puisse se mettre à jour (y compris avec « Mettre à jour l'application »).
