@@ -1,7 +1,7 @@
 // Scène 3D (Three.js) : cave, casiers, bouteilles, anneaux, caméra, bouteille en gros plan, réglage des séparations, boucle d'animation. Ne dépend que des données et des outils.
-import { rackSizes, RACK_ORDER, STYLES, rackGrid, cellLayout, casePlaces, parseId, BOTTLE_D, slotId, qty, clamp, normalizeConfig, CONFIG_REV, moveSeparator } from './lib.js';
+import { rackSizes, caveLength, RACK_ORDER, STYLES, rackGrid, cellLayout, casePlaces, parseId, BOTTLE_D, slotId, qty, clamp, normalizeConfig, CONFIG_REV, moveSeparator } from './lib.js';
 import * as THREE from '../vendor/three.module.min.js';
-import { CONFIG_KEY, UNKNOWN_GLASS, bottleAt, config, records, saved, typeOf } from './data.js';
+import { CONFIG_KEY, UNKNOWN_GLASS, bottleAt, colNo, rackName, config, records, saved, typeOf } from './data.js';
 import { $, toast } from './util.js';
 
 // ---------- Géométrie de la cave (mètres, schématique) ----------
@@ -19,9 +19,12 @@ const dims = Object.fromEntries(RACK_ORDER.map((k) => {
   const st = STYLES[rk[k].style], grid = rackGrid(rk[k]);
   return [k, { cw: st.w, ch: st.h, W: grid.W, H: grid.H, grid }];
 }));
-const islandLen = Math.max(dims.IG.W, dims.ID.W) + 0.2;
-const outerLen = Math.max(dims.G.W, dims.D.W);
-const L = Math.max(outerLen + 1.2, islandLen + 2.8);
+// Disposition choisie dans « Rangement de la cave » : chaque casier peut être décalé le long de la cave (z, positif =
+// vers le devant), l'îlot vers un mur (ilotX) ; la cave s'allonge pour les contenir tous.
+const rackZ = (k) => rk[k].z || 0;
+const ILOT_X = config.ilotX || 0;
+const ENTRY = config.entree === 'fond' ? -1 : 1;   // côté de l'entrée : +1 devant (z positif), −1 au fond
+const L = caveLength(RACK_ORDER.map((k) => ({ W: dims[k].W, z: rackZ(k), island: k === 'IG' || k === 'ID' })));
 // Petit mur droit sous la voûte : rehaussé si les casiers muraux sont hauts, pour qu'ils restent sous la voûte.
 const WALL_H = Math.max(0.3, BASE + Math.max(dims.G.H, dims.D.H) + 0.1 - Math.sqrt(R * R - RACK_FRONT_X * RACK_FRONT_X));
 
@@ -94,7 +97,8 @@ const decor = new THREE.Group(); scene.add(decor);   // masqué quand on regarde
     g.font = '500 54px -apple-system, "Helvetica Neue", sans-serif'; g.fillStyle = '#9cc4ee'; g.fillText('▼  ENTRÉE  ▼', w / 2, 200);
   });
   const t = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 0.65), new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
-  t.rotation.x = -Math.PI / 2; t.position.set(0, 0.01, L / 2 - 0.5); decor.add(t);
+  // Du côté de l'entrée, tourné pour se lire en entrant (demi-tour sur lui-même quand l'entrée est au fond)
+  t.rotation.set(-Math.PI / 2, 0, ENTRY > 0 ? 0 : Math.PI); t.position.set(0, 0.01, ENTRY * (L / 2 - 0.5)); decor.add(t);
 }
 
 // ---------- Casiers ----------
@@ -178,7 +182,8 @@ function makeLabel(text, key) {
 }
 function makeRack(key, x, rotY, flip, hasBody, labelText) {
   const { cols, rows, style } = rk[key], { cw, ch, W, H, grid } = dims[key], layout = cellLayout(style), isCases = style === 'cases';
-  const group = new THREE.Group(); group.position.set(x, 0, 0); group.rotation.y = rotY; scene.add(group);
+  const z = rackZ(key);
+  const group = new THREE.Group(); group.position.set(x, 0, z); group.rotation.y = rotY; scene.add(group);
   let plane;
   if (isCases) {
     // Cases maçonnées : façade dessinée case par case (tailles inégales) ; ce plan invisible sert au toucher.
@@ -196,7 +201,7 @@ function makeRack(key, x, rotY, flip, hasBody, labelText) {
   group.updateMatrixWorld(true);
   const normal = new THREE.Vector3(0, 0, 1).applyQuaternion(group.quaternion);
   const label = makeLabel(labelText, key);
-  label.position.set(x + normal.x * (hasBody ? -RACK_D / 2 : 0.55), BASE + H + (hasBody ? 0.4 : 0.6), (key === 'G' || key === 'ID' ? -1 : 1) * W * 0.22);
+  label.position.set(x + normal.x * (hasBody ? -RACK_D / 2 : 0.55), BASE + H + (hasBody ? 0.4 : 0.6), z + (key === 'G' || key === 'ID' ? -1 : 1) * W * 0.22);
   const ringS = Math.min(cw, ch) / 0.2;   // anneaux de sélection et de recherche à la taille de l'emplacement
   racks[key] = { key, group, plane, body, cols, rows, flip, cw, ch, W, H, layout, ringS, normal, label, isCases, grid, facade: null, places: [], glass: null, rings: null };
   buildFacade(racks[key]);
@@ -284,13 +289,14 @@ export function slotWorld(key, c, r, out = new THREE.Vector3()) {
 }
 export const inRack = (key, c, r) => racks[key] && c >= 0 && r >= 0 && c < racks[key].cols && r < racks[key].rows;
 
-// Colonne 1 = toujours la plus proche de l'entrée
-makeRack('G', -RACK_FRONT_X, Math.PI / 2, false, true, 'Mur gauche');
-makeRack('D', RACK_FRONT_X, -Math.PI / 2, true, true, 'Mur droit');
+// Colonne 1 = toujours la plus proche de l'entrée. Étiquettes vues depuis l'entrée (gauche/droite échangées au fond).
+const shortName = (k) => rackName(k).replace(', côté', '');
+makeRack('G', -RACK_FRONT_X, Math.PI / 2, false, true, shortName('G'));
+makeRack('D', RACK_FRONT_X, -Math.PI / 2, true, true, shortName('D'));
 // L'îlot est fait de deux casiers dos à dos, chacun avec son propre meuble (comme les murs) :
 // chaque face a sa longueur et sa hauteur, sans grand bloc commun.
-makeRack('IG', -ISLAND_W / 2, -Math.PI / 2, true, true, 'Îlot gauche');
-makeRack('ID', ISLAND_W / 2, Math.PI / 2, false, true, 'Îlot droit');
+makeRack('IG', ILOT_X - ISLAND_W / 2, -Math.PI / 2, true, true, shortName('IG'));
+makeRack('ID', ILOT_X + ISLAND_W / 2, Math.PI / 2, false, true, shortName('ID'));
 
 // ---------- Pastilles des bouteilles ----------
 let hiddenId = null;     // bouteille « sortie » (présentée en gros plan)
@@ -344,7 +350,7 @@ export const selRing = new THREE.Mesh(new THREE.RingGeometry(0.082, 0.1, 40), ne
 selRing.visible = false; selRing.renderOrder = 6; scene.add(selRing);
 
 // ---------- Caméra : vue d'ensemble ou casier de face ----------
-export const view = { mode: 'overview', key: null, az: 0.42, el: 0.9, zoom: 1, u: 0, v: 0, d: 5 };
+export const view = { mode: 'overview', key: null, az: ENTRY > 0 ? 0.42 : 0.42 + Math.PI, el: 0.9, zoom: 1, u: 0, v: 0, d: 5 };   // vue prise du côté de l'entrée
 const cam = { pos: new THREE.Vector3(), tgt: new THREE.Vector3(), ready: false };
 const goalPos = new THREE.Vector3(), goalTgt = new THREE.Vector3();
 const tanH = () => TAN_V * aspect;
@@ -596,7 +602,9 @@ export function dragSeparator(l) {
   if (sel.axis === 'col') rk[k].colW = next; else rk[k].rowH = next;
   rebuildRack(k);
   const a = next[sel.i], b = next[sel.i + 1];
-  adjustText(sel.axis === 'col' ? `Colonne ${sel.i + 1} : ${cmText(a)} · colonne ${sel.i + 2} : ${cmText(b)} de large`
+  // Colonnes dans l'ordre depuis l'entrée (au fond, l'index le plus grand a le plus petit numéro)
+  const [n1, w1, n2, w2] = colNo(k, sel.i) < colNo(k, sel.i + 1) ? [colNo(k, sel.i), a, colNo(k, sel.i + 1), b] : [colNo(k, sel.i + 1), b, colNo(k, sel.i), a];
+  adjustText(sel.axis === 'col' ? `Colonne ${n1} : ${cmText(w1)} · colonne ${n2} : ${cmText(w2)} de large`
     : `Rangée ${sel.i + 1} : ${cmText(a)} · rangée ${sel.i + 2} : ${cmText(b)} de haut`);
 }
 
