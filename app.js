@@ -1006,7 +1006,7 @@ function showForm(id, draft = null) {
           <button type="button" class="btn" data-act="photo"><span class="ico" aria-hidden="true">📷</span>${draftPhoto ? 'Changer la photo' : 'Photo de l\'étiquette'}</button>
           ${hasKey ? `<button type="button" class="btn" data-act="voice" id="voiceBtn"><span class="ico" aria-hidden="true">🎤</span><span class="lbl">${b._voice ? 'Reparler' : 'Parler'}</span></button>` : ''}
         </div>
-        ${hasKey ? '<p class="help small">Ce que vous photographiez ou dites est envoyé à Google pour remplir la fiche.</p>' : ''}
+        ${hasKey ? '<p class="help">Ce que vous photographiez ou dites est envoyé à Google pour remplir la fiche.</p>' : ''}
         <div id="photoZone">${draftPhoto ? `<img class="photo" src="${esc(draftPhoto)}" alt="">` : ''}</div>
         ${draftPhoto ? `<div class="btns">${hasKey ? '<button type="button" class="btn" data-act="scan">Lire l\'étiquette</button>' : ''}<button type="button" class="btn danger" data-act="nophoto">Retirer la photo</button></div>` : ''}
         <div id="voiceZone"></div>
@@ -1176,10 +1176,16 @@ async function startVoice() {
   rec.ondataavailable = (e) => { if (e.data?.size) v.chunks.push(e.data); };
   rec.onstop = () => {
     v.stream.getTracks().forEach((t) => t.stop());
+    if (voice === v) {   // arrêté par l'iPhone lui-même (appel, écran verrouillé) : on remet le bouton et on propose d'écrire
+      voice = null; clearInterval(v.timer); resetVoiceBtn();
+      if (v.token === scanToken && $('form')) voiceError('L\'enregistrement a été interrompu : touchez « Parler » pour recommencer, ou écrivez ci-dessous.');
+      return;
+    }
     if (!v.send) return;
     const blob = new Blob(v.chunks, { type: rec.mimeType || type || 'audio/mp4' });
     if (!blob.size) { const st = $('scanStatus'); if (st) { st.className = 'scan err'; st.textContent = scanErrorMessage({ kind: 'empty' }); } return; }
     const fr = new FileReader();
+    fr.onerror = () => { if (v.token === scanToken && $('form')) voiceError('L\'enregistrement n\'a pas pu être lu : réessayez, ou écrivez ci-dessous.'); };
     fr.onload = () => {
       const m = /^data:([^;,]+)[^,]*;base64,(.*)$/.exec(String(fr.result));
       if (m && v.token === scanToken) runVoice({ audio: { mimeType: m[1], data: m[2] } });
@@ -1195,8 +1201,17 @@ function stopVoice(send) {
   const v = voice; voice = null; clearInterval(v.timer); v.send = send;
   try { if (v.rec.state !== 'inactive') v.rec.stop(); else v.stream.getTracks().forEach((t) => t.stop()); } catch { v.stream.getTracks().forEach((t) => t.stop()); }
   if (!send) v.stream.getTracks().forEach((t) => t.stop());
+  resetVoiceBtn();
+  const st = $('scanStatus'); if (send && st) { st.className = 'scan busy'; st.textContent = 'Envoi de ce que vous avez dit…'; }
+}
+function resetVoiceBtn() {
   const btn = $('voiceBtn');
   if (btn) { btn.classList.remove('rec'); btn.querySelector('.ico').textContent = '🎤'; btn.querySelector('.lbl').textContent = $('voiceText')?.value ? 'Reparler' : 'Parler'; }
+}
+/** Message d'erreur de la voix, avec le champ texte pour écrire ou dicter à la place. */
+function voiceError(msg) {
+  const st = $('scanStatus'); if (st) { st.className = 'scan err'; st.textContent = msg; }
+  if (!$('voiceText')) showVoiceZone('');
 }
 /**
  * Fait comprendre ce qui a été dit (audio) ou écrit (texte) puis remplit la fiche. Le texte affiché fait foi : en texte,
@@ -1229,7 +1244,7 @@ async function runVoice({ audio, text }) {
   } catch (e) {
     console.error(e);
     if (token === scanToken && $('form')) {
-      say('err', scanErrorMessage(e));
+      say('err', scanErrorMessage(e, 'voix'));
       if (!$('voiceText')) showVoiceZone(text || '', 'Vous pouvez aussi dicter avec le micro du clavier ou écrire ci-dessous.');
     }
   } finally {
@@ -1271,7 +1286,7 @@ $('sheetBody').addEventListener('click', async (e) => {
   const chip = e.target.closest('[data-couleur]');
   if (chip) { setChip(chip.dataset.couleur); $('form').dataset.colorTouched = '1'; markHand($('form'), 'couleur'); return; }
   const step = e.target.closest('[data-step]');
-  if (step) { const el = $('form').elements.quantite; el.value = clamp(qty({ quantite: el.value }) + (+step.dataset.step), 1, 99); return; }
+  if (step) { const el = $('form').elements.quantite; el.value = clamp(qty({ quantite: el.value }) + (+step.dataset.step), 1, 99); markHand($('form'), 'quantite'); return; }
   const row = e.target.closest('[data-goto]');
   if (row) { goTo(row.dataset.goto, row.dataset.ids); return; }
   const hl = e.target.closest('[data-hl]');   // fiche Case : allumer les bouteilles d'un vin
@@ -1489,6 +1504,9 @@ function runSearch(show = true) {
   const rows = groupRows(found);
   $('results').innerHTML = rows.length ? rows.slice(0, 80).map(rowHtml).join('') + (rows.length > 80 ? `<div class="empty">… et ${rows.length - 80} autres</div>` : '')
     : '<div class="empty">Aucune bouteille enregistrée ne correspond</div>';
+  // La fiche est masquée (pas fermée) : on cesse d'écouter et on ignore une lecture en cours, sinon l'enregistrement
+  // continuerait à l'insu de l'utilisateur et partirait seul au bout d'une minute
+  if (!$('sheet').hidden) { stopVoice(false); scanToken++; }
   $('results').hidden = false; $('sheet').hidden = true; hideHero();
 }
 $('search').addEventListener('input', () => runSearch());

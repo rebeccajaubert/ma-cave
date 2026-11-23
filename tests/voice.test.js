@@ -102,3 +102,19 @@ test('schémas de réponse : aucune valeur vide dans les énumérations (photo e
   const voix = buildVoiceRequest({ text: 'x', year: 2026 }).generationConfig.responseSchema;
   for (const s of [photo, voix]) assert.ok(!enums(s).includes(''), JSON.stringify(enums(s)));
 });
+
+// ---------- Relecture finale ----------
+import { parseLabelResponse } from '../scan.js';
+
+test('couleur : « rosé » avec accent est reconnu (photo et voix)', () => {
+  assert.equal(parseVoiceResponse(reply({ transcription: 'un rosé', couleur: 'Rosé' })).couleur, 'rose');
+  assert.equal(parseLabelResponse(reply({ nom: 'Ott', couleur: 'rosé' })).couleur, 'rose');
+});
+
+test('scanErrorMessage : nom du réglage à jour, message propre à la voix', () => {
+  assert.match(scanErrorMessage({ kind: 'nokey' }), /Lecture automatique/);
+  assert.match(scanErrorMessage({ kind: 'key' }), /Lecture automatique/);
+  assert.doesNotMatch(scanErrorMessage({ kind: 'format' }, 'voix'), /tiquette/);
+  assert.match(scanErrorMessage({ kind: 'format' }, 'voix'), /pas compris/);
+  assert.match(scanErrorMessage({ kind: 'format' }), /tiquette illisible/);   // la photo garde son message
+});

@@ -46,18 +46,22 @@ export class ScanError extends Error {
   constructor(kind, detail = '') { super(`${kind}: ${detail}`); this.kind = kind; this.detail = detail; }
 }
 
-/** Message en français à montrer à l'utilisateur pour chaque type d'erreur. */
-export function scanErrorMessage(err) {
+/**
+ * Message en français à montrer à l'utilisateur pour chaque type d'erreur.
+ * @param {{kind?: string}} err
+ * @param {'photo'|'voix'} [source] la voix a son propre message quand rien d'exploitable n'est revenu
+ */
+export function scanErrorMessage(err, source = 'photo') {
   switch (err?.kind) {
-    case 'nokey': return 'La lecture automatique n\'est pas activée (menu, « Lecture des étiquettes »).';
-    case 'key': return 'Clé refusée par Google. Vérifiez-la dans le menu, « Lecture des étiquettes ».';
+    case 'nokey': return 'La lecture automatique n\'est pas activée (menu, « Lecture automatique »).';
+    case 'key': return 'Clé refusée par Google. Vérifiez-la dans le menu, « Lecture automatique ».';
     case 'quota': return 'Limite gratuite atteinte. Réessayez dans une minute, ou saisissez à la main.';
     case 'network': return 'Pas de réseau : la lecture automatique a besoin d\'internet.';
     case 'timeout': return 'La lecture prend trop de temps. Réessayez.';
     case 'server': return 'Le service de Google ne répond pas pour le moment. Réessayez plus tard.';
     case 'empty': return 'Je n\'ai rien entendu : réessayez en parlant près du téléphone.';
     case 'model': return 'Le service de lecture a changé : mettez l\'application à jour (fermez-la complètement puis rouvrez-la avec du réseau).';
-    default: return 'Étiquette illisible : saisissez les informations à la main.';
+    default: return source === 'voix' ? 'Je n\'ai pas compris : réessayez, ou écrivez dans le champ ci-dessous.' : 'Étiquette illisible : saisissez les informations à la main.';
   }
 }
 
@@ -95,13 +99,11 @@ export function buildRequest(dataUrl, { withSchema = true } = {}) {
   return { contents: [{ parts: [{ text: PROMPT }, { inlineData: { mimeType, data } }] }], generationConfig };
 }
 
-/**
- * Valide la réponse du modèle : ne garde que des textes courts, un millésime plausible
- * et une couleur connue. Tout le reste devient une chaîne vide.
- * @returns {{nom:string, millesime:string, appellation:string, region:string, cepage:string, couleur:string}}
- */
 /** Texte court nettoyé (espaces réduits, longueur bornée) ; tout ce qui n'est pas du texte devient ''. */
 const str = (v, max = 120) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '');
+
+/** Couleur reconnue (accents et majuscules ignorés : « Rosé » donne « rose »), sinon ''. */
+const colorOf = (v) => { const c = str(v, 20).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); return COLORS.includes(c) ? c : ''; };
 
 /** Objet JSON renvoyé par le modèle (éventuellement entouré de ```), ou ScanError « format ». */
 function readModelJson(json) {
@@ -113,13 +115,18 @@ function readModelJson(json) {
   return raw;
 }
 
+/**
+ * Valide la réponse du modèle : ne garde que des textes courts, un millésime plausible
+ * et une couleur connue. Tout le reste devient une chaîne vide.
+ * @returns {{nom:string, millesime:string, appellation:string, region:string, cepage:string, couleur:string}}
+ */
 export function parseLabelResponse(json) {
   const raw = readModelJson(json);
   const year = str(raw.millesime, 40).match(/\b(19|20)\d{2}\b/);
-  const couleur = str(raw.couleur, 20).toLowerCase();
+  const couleur = colorOf(raw.couleur);
   return {
     nom: str(raw.nom), millesime: year ? year[0] : '', appellation: str(raw.appellation),
-    region: str(raw.region), cepage: str(raw.cepage), couleur: COLORS.includes(couleur) ? couleur : '',
+    region: str(raw.region), cepage: str(raw.cepage), couleur,
   };
 }
 
@@ -247,13 +254,13 @@ const yearOf = (v) => { const m = str(v, 40).match(/\b(19|20)\d{2}\b/); return m
  */
 export function parseVoiceResponse(json) {
   const raw = readModelJson(json);
-  const couleur = str(raw.couleur, 20).toLowerCase();
+  const couleur = colorOf(raw.couleur);
   const q = numberIn(raw.quantite, 1, 99), prix = numberIn(raw.prix, 0, 100000);
   const note = numberIn(String(typeof raw.note === 'number' ? raw.note : str(raw.note, 40)).split('/')[0], 0, 20);
   return {
     transcription: str(raw.transcription, 1000), nom: str(raw.nom), millesime: yearOf(raw.millesime), apogee: yearOf(raw.apogee),
     appellation: str(raw.appellation), region: str(raw.region), cepage: str(raw.cepage),
-    couleur: COLORS.includes(couleur) ? couleur : '',
+    couleur,
     quantite: q !== null && Number.isInteger(q) ? q : null,
     prix: prix === null ? '' : String(prix), note: note === null ? '' : String(note),
     commentaire: str(raw.commentaire, 300),
