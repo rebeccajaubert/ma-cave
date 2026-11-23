@@ -194,6 +194,17 @@ export const qty = (b) => clamp(parseInt(b?.quantite) || 1, 1, 99);
 
 /** Nombre total de bouteilles d'une liste de fiches (une fiche peut en regrouper plusieurs). */
 export const totalBottles = (list) => list.reduce((s, b) => s + qty(b), 0);
+/**
+ * Phrase de résumé en tête du menu, ex. « 142 bouteilles · 18 places libres ».
+ * En français, 0 et 1 sont au singulier (« 0 bouteille »).
+ * @param {number} bottles nombre de bouteilles rangées
+ * @param {number} free nombre d'emplacements vides
+ * @returns {string}
+ */
+export function caveSummary(bottles, free) {
+  const s = (n) => (n > 1 ? 's' : '');
+  return `${bottles} bouteille${s(bottles)} · ${free} place${s(free)} libre${s(free)}`;
+}
 
 /**
  * Suggestions de saisie à partir des fiches déjà enregistrées : valeurs distinctes,
