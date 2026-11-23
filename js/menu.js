@@ -1,10 +1,10 @@
 // Menu, réglages, gestion d'un casier (vider), aides (bienvenue, à boire bientôt, installation).
-import { parseId, caseIdOf, esc, caveSummary, totalBottles, qty, rackLimits, RACK_NAMES, STYLES, RACK_ORDER, rackGrid, rackSize, meters, clamp, recordsIn, drinkSoon, colIndex, RACK_Z_MAX, ILOT_X_MAX } from './lib.js';
+import { parseId, caseIdOf, esc, caveSummary, totalBottles, qty, rackLimits, STYLES, RACK_ORDER, rackGrid, rackSize, meters, clamp, recordsIn, drinkSoon, colIndex, RACK_Z_MAX, ILOT_X_MAX, rackOrderFromEntrance } from './lib.js';
 import { getApiKey } from './scan.js';
 import { markHand } from './autofill.js';
 import { copiesInfo, lastBackupText, storageLine, storageProtected } from './backup.js';
 import { styleOf } from './cases.js';
-import { DEV, TYPES, allBottles, colNo, config, persist, records } from './data.js';
+import { DEV, TYPES, allBottles, colNo, config, rackName, persist, records } from './data.js';
 import { inRack, last, racks, rk } from './scene.js';
 import { groupRows, rowHtml, sortBottles } from './search.js';
 import { closeSheet, lastSlot, openSheet, refresh } from './sheet.js';
@@ -75,9 +75,11 @@ export function showInventory(filter = '') {
 }
 /** Réglage du rangement : pour chaque casier, type de rangement, colonnes et rangées. */
 export function showConfig(focus = null) {
+  // Pas de 10 cm vers le mur de droite pour qui entre : vers le casier D si l'entrée est devant, vers G si elle est au fond
+  const towardRight = config.entree === 'fond' ? -0.1 : 0.1;
   const block = (k) => {
     const r = rk[k], lim = rackLimits(k, r.style);
-    return `<fieldset class="rackcfg" data-rack="${k}"${focus === k ? ' id="cfgFocus"' : ''}><legend>${RACK_NAMES[k]}</legend>
+    return `<fieldset class="rackcfg" data-rack="${k}"${focus === k ? ' id="cfgFocus"' : ''}><legend>${rackName(k)}</legend>
       <div class="chips">${Object.entries(STYLES).map(([sk, st]) => `<button type="button" class="chip${sk === r.style ? ' on' : ''}" data-style="${sk}">${st.nom}</button>`).join('')}</div>
       <input type="hidden" name="${k}_style" value="${r.style}">
       <p class="help small" data-aide>${esc(STYLES[r.style].aide)}</p>
@@ -103,19 +105,19 @@ export function showConfig(focus = null) {
           <input type="hidden" name="entree" value="${config.entree || 'avant'}">
           <p class="help small">La colonne 1 de chaque casier est toujours la plus proche de l'entrée : les numéros s'inversent si l'entrée change de bout, les bouteilles ne bougent pas.</p></div>
         <div class="field">Îlot central
-          <div class="shift"><button type="button" class="btn" data-shift="ilotX" data-step="-0.1">◀ Vers le mur gauche</button>
-            <button type="button" class="btn" data-shift="ilotX" data-step="0.1">Vers le mur droit ▶</button></div>
+          <div class="shift"><button type="button" class="btn" data-shift="ilotX" data-step="${-towardRight}">◀ Vers le mur gauche</button>
+            <button type="button" class="btn" data-shift="ilotX" data-step="${towardRight}">Vers le mur droit ▶</button></div>
           <input type="hidden" name="ilotX" value="${config.ilotX || 0}" data-max="${ILOT_X_MAX}"><p class="size" data-shift-text="ilotX">${xText(config.ilotX || 0)}</p></div>
       </fieldset>
-      ${RACK_ORDER.map(block).join('')}
+      ${rackOrderFromEntrance(config.entree).map(block).join('')}
       <div class="btns"><button type="button" class="btn" data-act="menu">Annuler</button><button type="submit" class="btn primary">Appliquer</button></div>
     </form>`, true);
   $('cfgFocus')?.scrollIntoView({ block: 'start' });
 }
 /** Position d'un casier le long de la cave (z en mètres, positif = vers le devant), en mots. */
 const zText = (z) => (Math.abs(z) < 0.005 ? 'Au milieu de la cave' : `Décalé de ${Math.round(Math.abs(z) * 100)} cm vers ${z > 0 ? 'le devant' : 'le fond'}`);
-/** Position de l'îlot entre les deux murs (x en mètres, positif = vers le mur droit), en mots. */
-const xText = (x) => (Math.abs(x) < 0.005 ? 'Au centre, entre les deux murs' : `Décalé de ${Math.round(Math.abs(x) * 100)} cm vers le mur ${x > 0 ? 'droit' : 'gauche'}`);
+/** Position de l'îlot entre les deux murs (x en mètres, positif = vers le casier de clé D), en mots vus depuis l'entrée. */
+const xText = (x) => (Math.abs(x) < 0.005 ? 'Au centre, entre les deux murs' : `Décalé de ${Math.round(Math.abs(x) * 100)} cm vers le ${rackName(x > 0 ? 'D' : 'G').toLowerCase()}`);
 /** Boutons ◀ ▶ / ▲ ▼ du réglage : décale d'un pas (10 cm), sans dépasser la limite, et met le texte à jour. */
 export function shiftLayout(btn) {
   const form = $('configForm'), name = btn.dataset.shift, el = form?.elements[name]; if (!el) return;
@@ -170,10 +172,10 @@ export async function confirmConfigChange(next) {
     const before = rk[k], after = next.racks[k], inRackNow = recordsIn(all, k);
     if (!inRackNow.length) continue;
     if (before.style !== after.style) {
-      warnings.push(`• ${RACK_NAMES[k]} : passe de « ${STYLES[before.style].nom} » à « ${STYLES[after.style].nom} » alors qu'il contient ${inRackNow.length} fiche(s). Chaque fiche reste attachée à son numéro de colonne et de rangée : avec un autre rangement, ces numéros ne désignent plus les mêmes endroits, et les bouteilles risquent d'être mélangées.`);
+      warnings.push(`• ${rackName(k)} : passe de « ${STYLES[before.style].nom} » à « ${STYLES[after.style].nom} » alors qu'il contient ${inRackNow.length} fiche(s). Chaque fiche reste attachée à son numéro de colonne et de rangée : avec un autre rangement, ces numéros ne désignent plus les mêmes endroits, et les bouteilles risquent d'être mélangées.`);
     }
     const hidden = inRackNow.filter((b) => { const p = parseId(b.id); return p.c >= after.cols || p.r >= after.rows; }).length;
-    if (hidden) warnings.push(`• ${RACK_NAMES[k]} : ${hidden} fiche(s) seront hors des nouvelles dimensions. Elles sont conservées mais invisibles tant que vous n'agrandissez pas.`);
+    if (hidden) warnings.push(`• ${rackName(k)} : ${hidden} fiche(s) seront hors des nouvelles dimensions. Elles sont conservées mais invisibles tant que vous n'agrandissez pas.`);
   }
   if (!warnings.length) return true;
   return ask(`Attention, l'arrangement risque d'être mélangé :\n\n${warnings.join('\n\n')}\n\nConseil : notez ces bouteilles ou videz d'abord le casier (menu, « Rangement de la cave », bouton « Gérer » du casier).`, 'Appliquer quand même');
@@ -189,7 +191,7 @@ export function showRackTools(k) {
       <div class="stepper"><button type="button" class="btn" data-tstep="-1" data-for="${name}" aria-label="Moins">−</button>
       <input name="${name}" id="${name}" value="${value}" inputmode="numeric" pattern="[0-9]*" data-max="${max}" aria-label="${label}">
       <button type="button" class="btn" data-tstep="1" data-for="${name}" aria-label="Plus">+</button></div></div>`;
-  openSheet(`Gérer : ${RACK_NAMES[k]}`, `
+  openSheet(`Gérer : ${rackName(k)}`, `
     <div class="loc">${esc(st.nom)} · ${rack.cols} colonnes × ${rack.rows} rangées · <b>${totalBottles(inIt)}</b> bouteille(s) dans <b>${inIt.length}</b> ${st.lieu}(s)</div>
     <h3>Vider une colonne</h3>
     ${stepper('toolCol', colNo(k, last.c), rack.cols, 'Colonne (depuis l\'entrée)')}
@@ -217,7 +219,7 @@ export async function clearPart(act) {
   const label = act === 'clear-col' ? `la colonne ${colN}` : act === 'clear-row' ? `la rangée ${row + 1}` : 'tout le casier';
   const list = recordsIn(allBottles(), k, what);
   if (!list.length) return toast(`Rien à vider dans ${label}`);
-  if (!await ask(`Vider ${label} (${RACK_NAMES[k]}) ? ${list.length} fiche(s), ${totalBottles(list)} bouteille(s) seront retirées de la cave.`, 'Vider')) return;
+  if (!await ask(`Vider ${label} (${rackName(k)}) ? ${list.length} fiche(s), ${totalBottles(list)} bouteille(s) seront retirées de la cave.`, 'Vider')) return;
   list.sort((a, b) => (b.pile ?? 0) - (a.pile ?? 0));   // cases maçonnées : « Annuler » rejoue du haut vers le bas
   const ids = list.map((b) => b.id);
   if (!await persist((st) => st.removeMany(ids))) return;

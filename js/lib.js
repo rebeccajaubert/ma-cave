@@ -597,3 +597,16 @@ export function caveLength(racks) {
   for (const r of racks) half = Math.max(half, Math.abs(r.z) + (r.island ? (r.W + 0.2) / 2 + 1.4 : r.W / 2 + 0.6));
   return 2 * half;
 }
+
+const MIRROR = { G: 'D', D: 'G', IG: 'ID', ID: 'IG' };
+/**
+ * Casier qui porte le nom « vu depuis l'entrée ». Entrée au fond : on entre par l'autre bout, la gauche et la droite
+ * s'échangent ; le casier de clé `G` est alors à droite de qui entre. Les clés des fiches ne changent jamais.
+ * @param {'G'|'IG'|'ID'|'D'} k clé du casier
+ * @param {'avant'|'fond'} entree
+ */
+export const mirrorRack = (k, entree) => (entree === 'fond' ? MIRROR[k] || k : k);
+/** Nom affiché d'un casier, vu depuis l'entrée (« Mur gauche » = à gauche de qui entre). */
+export const rackLabel = (k, entree) => RACK_NAMES[mirrorRack(k, entree)] || k;
+/** Clés des casiers de gauche à droite pour qui entre (ordre de la barre du bas). */
+export const rackOrderFromEntrance = (entree) => ['G', 'IG', 'ID', 'D'].map((k) => mirrorRack(k, entree));

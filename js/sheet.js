@@ -1,10 +1,10 @@
 // Fiche du bas : sélection d'un emplacement, fiche d'une bouteille ou d'une case, formulaire, actions, modes « copie » et « déplacer ».
-import { slotId, parseId, caseIdOf, qty, BOTTLE_D, pileOf, norm, RACK_NAMES, esc, suggestions, findKnownWine, inheritableFields, clamp, placeLost, undoPlaceLost, realRecordCount, totalBottles, RACK_ORDER, normalizeConfig, CONFIG_REV } from './lib.js';
+import { slotId, parseId, caseIdOf, qty, BOTTLE_D, pileOf, norm, esc, suggestions, findKnownWine, inheritableFields, clamp, placeLost, undoPlaceLost, realRecordCount, totalBottles, RACK_ORDER, normalizeConfig, CONFIG_REV } from './lib.js';
 import { getApiKey, cleanApiKey, setApiKey, clearApiKey } from './scan.js';
 import { checkScanKey, markHand, runScan, runVoice, showScanSettings, showVoiceZone, startVoice, stopVoice, voice } from './autofill.js';
 import { exportData, restoreCopy, showCopies } from './backup.js';
 import { WINE_FIELDS, addToCase, capacityOf, isCasesRack, locText, removeBottles, styleOf, wineOf } from './cases.js';
-import { CONFIG_KEY, DEV, TYPES, allBottles, bottleAt, colNo, deleteRecord, persistBatch, records, saveRecord, saved, typeOf } from './data.js';
+import { CONFIG_KEY, DEV, TYPES, allBottles, bottleAt, colNo, deleteRecord, rackName, persistBatch, records, saveRecord, saved, typeOf } from './data.js';
 import { clearDemo, seedDemo } from './demo.js';
 import { clearPart, confirmConfigChange, pickEntree, pickStyle, shiftLayout, showConfig, showInstall, showInventory, showMenu, showRackTools, showSettings, showSoon, showWelcome, stepTool } from './menu.js';
 import { BOTTLE_OUT, adjust, bottleLocal, caseLocal, clampView, dFor, dMax, focusCase, focusSlot, hideHero, highlighted, inRack, presentBottle, racks, rebuildBottles, restV, rk, selRing, setHighlight, setPicked, showRack, slotWorld, startAdjust, view, viewW } from './scene.js';
@@ -112,7 +112,7 @@ function showCase(caseId, hl = null) {
   const pile = pileOf(allBottles(), caseId), cap = capacityOf(caseId), groups = new Map();
   for (const b of pile) { const g = `${norm(b.nom)}|${b.millesime || ''}`; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(b); }
   const lost = bottleAt(caseId);   // ancienne fiche restée « à ranger » faute de place
-  openSheet(`${RACK_NAMES[k]} · colonne ${colNo(k, c)} · rangée ${r + 1}`, `
+  openSheet(`${rackName(k)} · colonne ${colNo(k, c)} · rangée ${r + 1}`, `
     <div class="list">${[...groups.values()].map((g) => `<button class="row" data-hl="${g.map((b) => b.id).join(',')}"><span class="dot" style="background:${typeOf(g[0]).css}"></span>
       <span class="main"><div class="n">${esc(g[0].nom || 'Sans nom')}</div><div class="s">${esc(g[0].appellation || '')}</div></span>
       <span class="y">${esc(g[0].millesime || '')} <small>×${g.length}</small></span></button>`).join('') || '<div class="empty">Cette case est vide.</div>'}</div>

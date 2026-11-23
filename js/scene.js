@@ -1,7 +1,7 @@
 // Scène 3D (Three.js) : cave, casiers, bouteilles, anneaux, caméra, bouteille en gros plan, réglage des séparations, boucle d'animation. Ne dépend que des données et des outils.
 import { rackSizes, caveLength, RACK_ORDER, STYLES, rackGrid, cellLayout, casePlaces, parseId, BOTTLE_D, slotId, qty, clamp, normalizeConfig, CONFIG_REV, moveSeparator } from './lib.js';
 import * as THREE from '../vendor/three.module.min.js';
-import { CONFIG_KEY, UNKNOWN_GLASS, bottleAt, colNo, config, records, saved, typeOf } from './data.js';
+import { CONFIG_KEY, UNKNOWN_GLASS, bottleAt, colNo, rackName, config, records, saved, typeOf } from './data.js';
 import { $, toast } from './util.js';
 
 // ---------- Géométrie de la cave (mètres, schématique) ----------
@@ -289,13 +289,14 @@ export function slotWorld(key, c, r, out = new THREE.Vector3()) {
 }
 export const inRack = (key, c, r) => racks[key] && c >= 0 && r >= 0 && c < racks[key].cols && r < racks[key].rows;
 
-// Colonne 1 = toujours la plus proche de l'entrée
-makeRack('G', -RACK_FRONT_X, Math.PI / 2, false, true, 'Mur gauche');
-makeRack('D', RACK_FRONT_X, -Math.PI / 2, true, true, 'Mur droit');
+// Colonne 1 = toujours la plus proche de l'entrée. Étiquettes vues depuis l'entrée (gauche/droite échangées au fond).
+const shortName = (k) => rackName(k).replace(', côté', '');
+makeRack('G', -RACK_FRONT_X, Math.PI / 2, false, true, shortName('G'));
+makeRack('D', RACK_FRONT_X, -Math.PI / 2, true, true, shortName('D'));
 // L'îlot est fait de deux casiers dos à dos, chacun avec son propre meuble (comme les murs) :
 // chaque face a sa longueur et sa hauteur, sans grand bloc commun.
-makeRack('IG', ILOT_X - ISLAND_W / 2, -Math.PI / 2, true, true, 'Îlot gauche');
-makeRack('ID', ILOT_X + ISLAND_W / 2, Math.PI / 2, false, true, 'Îlot droit');
+makeRack('IG', ILOT_X - ISLAND_W / 2, -Math.PI / 2, true, true, shortName('IG'));
+makeRack('ID', ILOT_X + ISLAND_W / 2, Math.PI / 2, false, true, shortName('ID'));
 
 // ---------- Pastilles des bouteilles ----------
 let hiddenId = null;     // bouteille « sortie » (présentée en gros plan)
@@ -601,7 +602,9 @@ export function dragSeparator(l) {
   if (sel.axis === 'col') rk[k].colW = next; else rk[k].rowH = next;
   rebuildRack(k);
   const a = next[sel.i], b = next[sel.i + 1];
-  adjustText(sel.axis === 'col' ? `Colonne ${colNo(k, sel.i)} : ${cmText(a)} · colonne ${colNo(k, sel.i + 1)} : ${cmText(b)} de large`
+  // Colonnes dans l'ordre depuis l'entrée (au fond, l'index le plus grand a le plus petit numéro)
+  const [n1, w1, n2, w2] = colNo(k, sel.i) < colNo(k, sel.i + 1) ? [colNo(k, sel.i), a, colNo(k, sel.i + 1), b] : [colNo(k, sel.i + 1), b, colNo(k, sel.i), a];
+  adjustText(sel.axis === 'col' ? `Colonne ${n1} : ${cmText(w1)} · colonne ${n2} : ${cmText(w2)} de large`
     : `Rangée ${sel.i + 1} : ${cmText(a)} · rangée ${sel.i + 2} : ${cmText(b)} de haut`);
 }
 

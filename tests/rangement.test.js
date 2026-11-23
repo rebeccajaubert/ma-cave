@@ -32,3 +32,14 @@ test('caveLength : longueur actuelle sans décalage, agrandie pour contenir un c
   assert.ok(Math.abs(caveLength(racks({ G: 2 })) - (2 * (2 + 1.8 + 0.6))) < 1e-9);    // mur gauche avancé de 2 m
   assert.ok(Math.abs(caveLength(racks({ G: -2 })) - caveLength(racks({ G: 2 }))) < 1e-9);   // symétrique
 });
+
+// Entrée au fond : on regarde la cave depuis l'autre bout ; ce qui était à gauche est à droite. Les clés (G, IG,
+// ID, D) des fiches ne changent jamais : seuls les noms affichés et l'ordre de la barre du bas suivent l'entrée.
+import { mirrorRack, rackLabel, rackOrderFromEntrance, RACK_NAMES } from '../js/lib.js';
+test('mirrorRack / rackLabel / rackOrderFromEntrance : gauche et droite vus depuis l\'entrée', () => {
+  for (const k of ['G', 'IG', 'ID', 'D']) { assert.equal(mirrorRack(k, 'avant'), k); assert.equal(rackLabel(k, 'avant'), RACK_NAMES[k]); }
+  assert.equal(mirrorRack('G', 'fond'), 'D'); assert.equal(mirrorRack('IG', 'fond'), 'ID');
+  assert.equal(rackLabel('G', 'fond'), 'Mur droit'); assert.equal(rackLabel('ID', 'fond'), RACK_NAMES.IG);
+  assert.deepEqual(rackOrderFromEntrance('avant'), ['G', 'IG', 'ID', 'D']);
+  assert.deepEqual(rackOrderFromEntrance('fond'), ['D', 'ID', 'IG', 'G']);   // de gauche à droite pour qui entre au fond
+});
