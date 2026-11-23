@@ -210,3 +210,7 @@ body.adjusting #adjustBar { top: calc(var(--sat) + 12px); }
 /* Rangement de la cave : boutons pour décaler un casier ou l'îlot (gros, côte à côte) */
 .shift { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 6px 0 4px; }
 .shift .btn { min-height: 52px; }
+
+/* Demande à trois choix (déplacer une case : empiler, échanger, annuler) : boutons l'un sous l'autre, le principal en haut */
+#dialogBox.three .btns { flex-direction: column-reverse; align-items: stretch; }
+#dialogBox.three .btns .btn { width: 100%; }

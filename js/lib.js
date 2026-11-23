@@ -390,6 +390,67 @@ export function undoPlaceLost(list, lost, written) {
 }
 
 /**
+ * Déplace TOUT le contenu (la pile) d'une case maçonnée vers une autre, chaque pile gardant son ordre.
+ * - `'stack'` : par-dessus ce que contient la case d'arrivée (ou dans une case vide) ;
+ * - `'swap'` : échange des deux contenus.
+ * Les bouteilles gardent leur suffixe (`K:c:r:u` → `K2:c2:r2:u`), un nouveau est tiré s'il est déjà pris. Une ancienne
+ * fiche « à ranger » (`K:c:r`, hors de la pile) reste dans sa case. À écrire dans UNE transaction : les nouvelles
+ * fiches et la suppression des anciennes ensemble, pour qu'aucune bouteille ne soit jamais perdue ni en double.
+ * @param {object[]} list toutes les fiches
+ * @param {string} from case de départ
+ * @param {string} to case d'arrivée
+ * @param {'stack'|'swap'} how
+ * @param {{capFrom: number, capTo: number}} caps nombre de places de chaque case
+ * @param {() => number} [rand]
+ * @returns {{put: object[], remove: string[], before: object[], after: object[]}} `before` / `after` : contenu des
+ *   deux cases avant et après, pour « Annuler » (`undoMoveCase`)
+ * @throws {RangeError} si ça ne tient pas ; `cause` = `{ need, free }` (bouteilles à loger, places libres)
+ */
+export function moveCase(list, from, to, how, { capFrom, capTo }, rand = Math.random) {
+  const src = pileOf(list, from), dst = pileOf(list, to);
+  const taken = new Set(list.map((b) => b.id));
+  // Nouvel identifiant dans la case `caseId` : le même suffixe si possible, sinon un nouveau jamais utilisé
+  const idIn = (caseId, b) => {
+    let id = `${caseId}:${parseId(b.id).u}`;
+    for (let i = 0; taken.has(id); i++) id = newBottleId(caseId, rand) + i.toString(36);
+    taken.add(id); return id;
+  };
+  const moveTo = (pile, caseId, start) => pile.map((b, i) => ({ ...b, id: idIn(caseId, b), pile: start + i }));
+  let put;
+  if (how === 'swap') {
+    if (src.length > capTo) throw new RangeError('la case d\'arrivée est trop petite', { cause: { need: src.length, free: capTo } });
+    if (dst.length > capFrom) throw new RangeError('la case de départ est trop petite', { cause: { need: dst.length, free: capFrom } });
+    put = [...moveTo(src, to, 0), ...moveTo(dst, from, 0)];
+  } else {
+    const free = Math.max(0, capTo - dst.length);
+    if (src.length > free) throw new RangeError('pas assez de place', { cause: { need: src.length, free } });
+    // Par-dessus la bouteille la plus haute (et non au rang « nombre de bouteilles ») : une ancienne pile à trou
+    // (rangs 0, 1, 3) donnerait sinon deux bouteilles au même rang
+    put = moveTo(src, to, dst.length ? Math.max(...dst.map((b) => Number(b.pile) || 0)) + 1 : 0);
+  }
+  const remove = (how === 'swap' ? [...src, ...dst] : src).map((b) => b.id);
+  const after = [...(how === 'swap' ? [] : dst), ...put];
+  return { put, remove, before: [...src, ...dst], after };
+}
+
+/**
+ * « Annuler » après `moveCase` : remet les deux cases exactement comme avant. Seulement si leur contenu est encore
+ * celui laissé par le déplacement (aucune bouteille ajoutée, bue, déplacée ou modifiée depuis) ; sinon null et rien
+ * n'est annulé. À écrire dans UNE transaction.
+ * @param {object[]} list toutes les fiches actuelles
+ * @param {{before: object[], after: object[], put: object[]}} op ce que `moveCase` a renvoyé
+ * @returns {{put: object[], remove: string[]} | null}
+ */
+export function undoMoveCase(list, op) {
+  const cases = new Set([...op.before, ...op.after].map((b) => caseIdOf(b.id)));
+  const now = list.filter((b) => b && !b.vide && parseId(b.id).u && cases.has(caseIdOf(b.id)));
+  if (now.length !== op.after.length) return null;
+  const byId = new Map(now.map((b) => [b.id, b]));
+  if (!op.after.every((b) => { const x = byId.get(b.id); return x && x.pile === b.pile && sameBottle(x, b); })) return null;
+  return { put: op.before, remove: op.put.map((b) => b.id) };
+}
+
+/**
  * Convertit les anciennes fiches de cases maçonnées (`K:c:r` avec une quantité) en une fiche par bouteille,
  * empilées dans leur case. Les bouteilles qui ne tiennent pas restent dans l'ancienne fiche, marquée `aRanger`.
  * @param {(k: string) => boolean} isCasesRack ce casier est-il en cases maçonnées ?

@@ -1,5 +1,5 @@
 // Fiche du bas : sélection d'un emplacement, fiche d'une bouteille ou d'une case, formulaire, actions, modes « copie » et « déplacer ».
-import { slotId, parseId, caseIdOf, qty, BOTTLE_D, pileOf, norm, esc, suggestions, findKnownWine, inheritableFields, clamp, placeLost, undoPlaceLost, realRecordCount, totalBottles, RACK_ORDER, normalizeConfig, CONFIG_REV } from './lib.js';
+import { slotId, parseId, caseIdOf, qty, BOTTLE_D, pileOf, moveCase, undoMoveCase, norm, esc, suggestions, findKnownWine, inheritableFields, clamp, placeLost, undoPlaceLost, realRecordCount, totalBottles, RACK_ORDER, normalizeConfig, CONFIG_REV } from './lib.js';
 import { getApiKey, cleanApiKey, setApiKey, clearApiKey } from './scan.js';
 import { checkScanKey, markHand, runScan, runVoice, showScanSettings, showVoiceZone, startVoice, stopVoice, voice } from './autofill.js';
 import { exportData, restoreCopy, showCopies } from './backup.js';
@@ -12,12 +12,12 @@ import { runSearch } from './search.js';
 import { pick } from './touch.js';
 import { offerUndo, offerUndoAction } from './undo.js';
 import { checkForUpdate } from './updates.js';
-import { $, ask, toast } from './util.js';
+import { $, ask, choose, toast } from './util.js';
 
 // ---------- État de l'interface ----------
 export let selected = null;   // { key, c, r, id }
 export let lastSlot = null;   // dernier emplacement touché, pour pré-remplir les outils « Gérer » d'un casier
-export let mode = null;       // { type: 'copy' | 'move', source: fiche }
+export let mode = null;       // { type: 'copy' | 'move', source: fiche } ou { type: 'move-case', from: case, n }
 export let draftPhoto = null;
 
 // ---------- Toucher un emplacement ----------
@@ -35,6 +35,7 @@ export async function tapSlot(hit) {
   if (slotBusy) return;
   slotBusy = true;
   try {
+    if (mode.type === 'move-case') return await moveCaseTo(id, inCases);
     // On repart de la fiche actuelle : elle a pu être modifiée ou retirée depuis le début du mode.
     const src = bottleAt(mode.source.id);
     if (!src) { endMode(); return toast('Cette bouteille n\'est plus dans la cave'); }
@@ -122,7 +123,7 @@ function showCase(caseId, hl = null) {
       <div class="btns"><button class="btn" data-act="over-show">Voir la bouteille en trop</button></div>` : ''}
     <p class="help">${pile.length} bouteille${pile.length > 1 ? 's' : ''} · ${Math.max(0, cap - pile.length)} place${cap - pile.length > 1 ? 's' : ''} libre${cap - pile.length > 1 ? 's' : ''}.${pile.length ? ' Touchez une bouteille dans la case pour voir sa fiche, ou une ligne pour la repérer.' : ''}</p>
     <div class="btns"><button class="btn primary block" data-act="add">Ajouter des bouteilles</button>
-      ${pile.length ? '<button class="btn danger block" data-act="clear-case">Vider cette case</button>' : ''}</div>`);
+      ${pile.length ? '<button class="btn block" data-act="move-case">Déplacer cette case</button><button class="btn danger block" data-act="clear-case">Vider cette case</button>' : ''}</div>`);
   // La case en grand, au-dessus de la fiche. On part de la hauteur de la fiche (pas de sa position : elle est en
   // train de monter, animée) ; une longue liste défile, la case garde au moins 40 % de l'écran.
   focusCase(k, c, r, Math.max(window.innerHeight * 0.4, window.innerHeight - $('sheet').offsetHeight));
@@ -332,6 +333,11 @@ $('sheetBody').addEventListener('click', async (e) => {
     if (!await ask(`Retirer « ${b.nom} » de la cave ? Sa fiche sera supprimée, et les bouteilles posées dessus descendront d'une place.`, 'Retirer')) return;
     if (await removeBottles([id], 'Bouteille retirée')) { if (racks[parseId(id).k]?.isCases) showCase(caseIdOf(id)); else closeSheet(); }
   }
+  else if (act === 'move-case') {   // tout le contenu de la case, vers une autre case touchée ensuite
+    const caseId = selected?.caseId, n = caseId ? pileOf(allBottles(), caseId).length : 0; if (!n) return;
+    mode = { type: 'move-case', from: caseId, n };
+    $('bannerQty').hidden = true; updateBanner(); $('banner').hidden = false; closeSheet();
+  }
   else if (act === 'clear-case') {   // toute la case, y compris une ancienne fiche « à ranger »
     const caseId = selected?.caseId, pile = caseId ? pileOf(allBottles(), caseId) : [], lost = caseId && bottleAt(caseId);
     const n = pile.length + (lost ? qty(lost) : 0); if (!n) return;
@@ -497,6 +503,9 @@ function startMode(type, b) {
 }
 function updateBanner() {
   if (!mode) return;
+  // Le bouton du bandeau abandonne le mode : « Annuler » pour un déplacement de case (rien n'est encore fait)
+  $('bannerDone').textContent = mode.type === 'move-case' ? 'Annuler' : 'Terminé';
+  if (mode.type === 'move-case') { $('bannerText').textContent = `Touchez la case où déplacer ${mode.n > 1 ? `ces ${mode.n} bouteilles` : 'cette bouteille'}`; return; }
   const nom = mode.source.nom || 'cette bouteille';
   $('bannerText').textContent = mode.type === 'copy'
     ? `Touchez chaque emplacement où ranger aussi « ${nom} »${mode.added ? ` (${mode.added} ajouté${mode.added > 1 ? 's' : ''})` : ''}`
@@ -504,6 +513,50 @@ function updateBanner() {
   $('bannerQtyVal').textContent = qty(mode.source);
 }
 function endMode() { mode = null; $('banner').hidden = true; }
+
+/**
+ * Mode « déplacer cette case » : la case touchée reçoit tout le contenu de la case de départ. Case d'arrivée vide :
+ * déplacement direct. Occupée : on demande « Empiler », « Échanger les deux cases » ou « Annuler », en ne proposant
+ * que ce qui tient. Tout est écrit dans UNE transaction (lib.js : moveCase), puis « Annuler » est proposé.
+ */
+async function moveCaseTo(to, inCases) {
+  if (!inCases) return toast('Touchez une case maçonnée : dans un casier métallique, chaque place n\'a qu\'une bouteille');
+  const from = mode.from;
+  if (to === from) return toast('C\'est la même case : touchez la case d\'arrivée');
+  const all = allBottles(), src = pileOf(all, from), dst = pileOf(all, to);
+  if (!src.length) { endMode(); return toast('Cette case est vide'); }
+  const capFrom = capacityOf(from), capTo = capacityOf(to), n = src.length, s = (k) => (k > 1 ? 's' : '');
+  let how = 'stack';
+  if (dst.length) {
+    const free = Math.max(0, capTo - dst.length), canStack = n <= free, canSwap = n <= capTo && dst.length <= capFrom;
+    if (!canStack && !canSwap) return toast(`Pas assez de place dans cette case (${free} place${s(free)} libre${s(free)}) : choisissez-en une autre`);
+    const msg = `Cette case contient déjà ${dst.length} bouteille${s(dst.length)}.\n\n`
+      + (canStack ? `Empiler : vos ${n} bouteille${s(n)} vont par-dessus.` : `Pas assez de place pour empiler (${free} place${s(free)} libre${s(free)} pour ${n} bouteille${s(n)}).`)
+      + (canSwap ? '\nÉchanger : chaque case prend le contenu de l\'autre.' : '\nÉchange impossible : un des deux contenus ne tient pas dans l\'autre case.');
+    const labels = canStack && canSwap ? { ok: 'Empiler', alt: 'Échanger les deux cases' } : { ok: canStack ? 'Empiler' : 'Échanger les deux cases' };
+    const choice = await choose(msg, labels);
+    if (!choice) return;   // annulé : on reste en mode, pour toucher une autre case
+    how = (choice === 'alt' || !canStack) ? 'swap' : 'stack';
+  }
+  let op;
+  try { op = moveCase(allBottles(), from, to, how, { capFrom, capTo }); } catch (e) {
+    if (!(e instanceof RangeError)) throw e;
+    return toast(`Cette case n'a que ${e.cause.free} place${s(e.cause.free)} libre${s(e.cause.free)} pour ${e.cause.need} bouteille${s(e.cause.need)}`);
+  }
+  if (!await persistBatch(op.put, op.remove)) return;   // nouvelles places et anciennes supprimées ensemble, ou rien
+  endMode(); refresh();
+  showCase(to, op.put.filter((b) => caseIdOf(b.id) === to).map((b) => b.id));
+  const lost = bottleAt(from) ? ' (les bouteilles « à ranger » restent dans l\'ancienne case)' : '';
+  const label = how === 'swap' ? 'Cases échangées' : `${n} bouteille${s(n)} déplacée${s(n)}`;
+  saved(label + lost);
+  offerUndoAction(label, async () => {
+    const u = undoMoveCase(allBottles(), op);   // null si une des deux cases a changé depuis
+    if (!u) return toast('Annulation impossible : une des deux cases a changé depuis');
+    if (!await persistBatch(u.put, u.remove)) return;
+    refresh(); if ([from, to].includes(selected?.caseId)) showCase(from);
+    saved('Annulé : les cases sont comme avant');
+  });
+}
 $('bannerDone').onclick = endMode;
 // Nombre de bouteilles rangées à chaque emplacement touché (mode copie)
 $('banner').addEventListener('click', (e) => {
