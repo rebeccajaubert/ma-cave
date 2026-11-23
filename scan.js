@@ -201,7 +201,7 @@ export async function scanLabel({ dataUrl, apiKey, fetchFn = fetch }) {
  */
 export function voicePrompt(year) {
   return `Quelqu'un décrit à voix haute (ou par écrit) une bouteille de vin de sa cave, en français.
-Écris d'abord exactement ce qui a été dit dans « transcription ». Puis range chaque information dans le bon champ du JSON :
+Écris d'abord exactement ce qui a été dit dans « transcription », en texte simple, sans horodatage (pas de « 00:00 »). Puis range chaque information dans le bon champ du JSON :
 - nom : le domaine, château ou cuvée (sans l'appellation ni le millésime)
 - millesime : l'année de récolte, 4 chiffres
 - apogee : l'année jusqu'à laquelle la boire, 4 chiffres ; « à boire dans 5 ans » ou « à garder 5 ans » : ajoute à ${year}
@@ -245,6 +245,8 @@ function numberIn(v, min, max) {
   const n = Number(t);
   return n >= min && n <= max ? n : null;
 }
+/** Retire les horodatages qu'ajoute parfois la transcription audio (« 00:04: », « [00:01] »). */
+const noTimestamps = (t) => t.replace(/\[\d{1,2}:\d{2}(?::\d{2})?\]\s*|(^|\s)\d{1,2}:\d{2}(?::\d{2})?:\s*/g, '$1').replace(/\s+/g, ' ').trim();
 const yearOf = (v) => { const m = str(v, 40).match(/\b(19|20)\d{2}\b/); return m ? m[0] : ''; };
 
 /**
@@ -258,7 +260,7 @@ export function parseVoiceResponse(json) {
   const q = numberIn(raw.quantite, 1, 99), prix = numberIn(raw.prix, 0, 100000);
   const note = numberIn(String(typeof raw.note === 'number' ? raw.note : str(raw.note, 40)).split('/')[0], 0, 20);
   return {
-    transcription: str(raw.transcription, 1000), nom: str(raw.nom), millesime: yearOf(raw.millesime), apogee: yearOf(raw.apogee),
+    transcription: noTimestamps(str(raw.transcription, 1000)), nom: str(raw.nom), millesime: yearOf(raw.millesime), apogee: yearOf(raw.apogee),
     appellation: str(raw.appellation), region: str(raw.region), cepage: str(raw.cepage),
     couleur,
     quantite: q !== null && Number.isInteger(q) ? q : null,

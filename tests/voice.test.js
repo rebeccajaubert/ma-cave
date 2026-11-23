@@ -118,3 +118,12 @@ test('scanErrorMessage : nom du réglage à jour, message propre à la voix', ()
   assert.match(scanErrorMessage({ kind: 'format' }, 'voix'), /pas compris/);
   assert.match(scanErrorMessage({ kind: 'format' }), /tiquette illisible/);   // la photo garde son message
 });
+
+// Essai au simulateur iOS : Gemini a renvoyé « 00:00: offerte par Paul… 00:04: dix… » pour un enregistrement.
+test('parseVoiceResponse : les horodatages de la transcription audio sont retirés', () => {
+  const t = (s) => parseVoiceResponse(reply({ transcription: s, nom: 'x' })).transcription;
+  assert.equal(t('00:00: offerte par Paul, 120 euros 00:04: dix, à boire avant 2030.'), 'offerte par Paul, 120 euros dix, à boire avant 2030.');
+  assert.equal(t('[00:01] Talbot 2016'), 'Talbot 2016');
+  assert.equal(t('à boire vers 2030'), 'à boire vers 2030');
+});
+test('voicePrompt : pas d\'horodatage dans la transcription', () => assert.match(voicePrompt(2026), /horodatage/));
