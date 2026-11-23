@@ -82,8 +82,10 @@ npm test          # tests automatiques (Node ≥ 20, sans dépendance)
 npm run serve     # serveur local sur http://localhost:8765  (ou : python3 -m http.server 8765)
 ```
 
-Pour essayer sur un iPhone du même Wi-Fi : `http://<adresse-IP-du-Mac>:8765` (le service worker, donc le mode hors-ligne, ne s'active qu'en HTTPS).
+Pour essayer sur un iPhone du même Wi-Fi : `http://<adresse-IP-du-Mac>:8765/?debug` (sans `?debug`, une adresse IP se comporte comme le site publié : pas de bouteilles d'exemple ; le service worker, donc le mode hors-ligne, ne s'active qu'en HTTPS).
 Ajouter `?debug` à l'adresse expose `window.__cave` pour les tests dans le navigateur.
+
+**Bouteilles d'exemple : en développement seulement.** Sur le serveur local (`localhost`) ou avec `?debug` dans l'adresse, une cave vide se remplit de bouteilles d'exemple au premier lancement, et le menu propose « Test : ajouter / retirer des bouteilles d'exemple ». Sur le site publié, aucun exemple n'est ajouté, et ceux laissés par une ancienne version sont retirés au lancement (après la copie de sécurité), sans toucher aux vraies fiches. Ouvrir le site publié avec `?debug` ajoute donc des exemples à une cave vide, retirés au lancement suivant sans `?debug`.
 
 ### Structure
 

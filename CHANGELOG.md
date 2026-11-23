@@ -11,6 +11,9 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), ver
 - **Rappel de sauvegarde** : si les bouteilles n'ont jamais été sauvegardées, ou pas depuis un mois, l'application le propose au lancement (au plus une fois par semaine).
 - Le menu indique la date de la dernière sauvegarde et si l'iPhone protège le stockage de l'application (il ne le videra pas pour faire de la place).
 
+### Modifié
+- **Plus de bouteilles d'exemple sur le téléphone** : elles ne sont plus ajoutées à la première ouverture, et celles qui restent sont retirées automatiquement (les vraies bouteilles ne sont pas touchées ; une bouteille d'exemple modifiée par l'utilisateur compte comme une vraie). Elles restent disponibles pour les tests, sur le serveur local ou avec `?debug`.
+
 ## [0.4.2] - 2026-11-21
 
 ### Corrigé

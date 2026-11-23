@@ -476,3 +476,17 @@ export function lastLaunchedVersion(stored, summaries) {
   const last = [...summaries].filter((c) => c.raison === 'version' && c.vers).sort((a, b) => b.id - a.id)[0];
   return last ? last.vers : null;
 }
+
+/**
+ * Mode développement : serveur local, ou `?debug` dans l'adresse. Les bouteilles d'exemple n'existent qu'en
+ * mode développement : sur le téléphone d'un utilisateur, elles ne sont jamais ajoutées et celles d'avant
+ * sont retirées.
+ * @param {string} hostname `location.hostname`
+ * @param {string} search `location.search`
+ * @returns {boolean}
+ */
+export function isDevMode(hostname, search) {
+  const h = String(hostname).toLowerCase();
+  if (['localhost', '127.0.0.1', '[::1]', '::1'].includes(h) || h.endsWith('.localhost')) return true;
+  return new URLSearchParams(search).has('debug');
+}

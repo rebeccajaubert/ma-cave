@@ -1,5 +1,5 @@
 import * as THREE from './vendor/three.module.min.js';
-import { esc, clamp, norm, RACK_ORDER, RACK_NAMES, slotId, parseId, isValidId, DEFAULT_CONFIG, CONFIG_REV, STYLES, rackGrid, casePlaces, pileOf, BOTTLE_D, moveSeparator, caseIdOf, newBottleId, pushToPile, removeFromPile, undoRemoval, normalizePile, migrateCaseRecords, placeLost, DEFAULT_STYLE, rackLimits, normalizeConfig, rackSizes, rackSize, meters, recordsIn, isNewerVersion, LEGACY_CONFIG, needsLegacyConfig, realRecordCount, shouldResetDemoToVerdelot, cellLayout, drinkSoon, qty, totalBottles, suggestions, findKnownWine, inheritableFields, needsSnapshot, copiesToDrop, backupReminderDue, lastLaunchedVersion, DAY_MS } from './lib.js';
+import { esc, clamp, norm, RACK_ORDER, RACK_NAMES, slotId, parseId, isValidId, DEFAULT_CONFIG, CONFIG_REV, STYLES, rackGrid, casePlaces, pileOf, BOTTLE_D, moveSeparator, caseIdOf, newBottleId, pushToPile, removeFromPile, undoRemoval, normalizePile, migrateCaseRecords, placeLost, DEFAULT_STYLE, rackLimits, normalizeConfig, rackSizes, rackSize, meters, recordsIn, isNewerVersion, LEGACY_CONFIG, needsLegacyConfig, realRecordCount, shouldResetDemoToVerdelot, cellLayout, drinkSoon, qty, totalBottles, suggestions, findKnownWine, inheritableFields, needsSnapshot, copiesToDrop, backupReminderDue, lastLaunchedVersion, isDevMode, DAY_MS } from './lib.js';
 import { openStore, openCopies } from './db.js';
 import { getApiKey, setApiKey, clearApiKey, cleanApiKey, scanLabel, testApiKey, scanErrorMessage } from './scan.js';
 
@@ -51,6 +51,8 @@ const UNKNOWN_GLASS = 0x14220e;
 
 // ---------- Fiches : en mémoire, et enregistrées sur l'appareil à chaque modification ----------
 let store = null;                // accès à la base locale (null si le stockage est indisponible)
+// Mode développement (serveur local ou ?debug) : seul mode où existent les bouteilles d'exemple
+const DEV = isDevMode(location.hostname, location.search);
 const records = new Map();       // identifiant d'emplacement -> fiche
 const bottleAt = (id) => { const b = records.get(id); return b && !b.vide ? b : null; };
 const allBottles = () => [...records.values()].filter((b) => !b.vide);
@@ -1229,7 +1231,7 @@ $('sheetBody').addEventListener('click', async (e) => {
     await checkScanKey(key, { keep: key === getApiKey() });
   }
   else if (act === 'scan-clear') { if (await ask('Désactiver la lecture automatique et effacer la clé de cet appareil ?', 'Désactiver')) { clearApiKey(); showScanSettings(); } }
-  else if (act === 'demo') {
+  else if (act === 'demo' && DEV) {
     // Exemples par-dessus de vraies fiches : sans danger pour elles (places vides seulement), mais cela mélange
     // de fausses bouteilles aux vraies dans la cave : on demande confirmation.
     const real = realRecordCount([...records.values()]);
@@ -1408,7 +1410,7 @@ function showMenu() {
       ${copiesInfo.length ? '<button class="btn block" data-act="snapshots">Revenir en arrière (copies de sécurité)</button>' : ''}
       <button class="btn block" data-act="install">Installer sur l'iPhone</button>
       <button class="btn block" data-act="help">Mode d'emploi</button>
-      ${[...records.values()].some((b) => b.demo) ? '<button class="btn danger block" data-act="cleardemo">Test : retirer les bouteilles d\'exemple</button>' : '<button class="btn block" data-act="demo">Test : ajouter des bouteilles d\'exemple</button>'}
+      ${[...records.values()].some((b) => b.demo) ? '<button class="btn danger block" data-act="cleardemo">Test : retirer les bouteilles d\'exemple</button>' : DEV ? '<button class="btn block" data-act="demo">Test : ajouter des bouteilles d\'exemple</button>' : ''}
     </div>`, true);
 }
 /** Liste de toutes les fiches ; toucher une couleur filtre la liste. */
@@ -1818,7 +1820,7 @@ async function upgradeCases() {
   const all = [...records.values()];
   if (!regenerated && all.length && !realRecordCount(all)) {
     try { localStorage.setItem('cave-demo-v4', '1'); } catch { return; }
-    if (await persistBatch([], all.map((b) => b.id))) await seedDemo();
+    if (await persistBatch([], all.map((b) => b.id)) && DEV) await seedDemo();   // exemples : en développement seulement
     return;
   }
   const mig = migrateCaseRecords(allBottles(), isCasesRack, capacityOf);
@@ -1892,9 +1894,16 @@ if (new URLSearchParams(location.search).has('debug')) window.__cave = { tapSlot
     // (avec des fiches, mais toujours sans réglage) croirait à un appareil de la 0.2.0.
     try { localStorage.setItem(CONFIG_KEY, JSON.stringify(config)); } catch { /* stockage bloqué : rien à faire */ }
   }
+  // Téléphone d'un utilisateur : jamais de bouteilles d'exemple. Celles laissées par une ancienne version sont
+  // retirées (seulement les fiches marquées « exemple » : une fiche modifiée par l'utilisateur n'en est plus une).
+  // Après la copie de sécurité seulement : une vraie bouteille posée sur des exemples descend dans sa case.
+  if (store && !DEV && copyOk && [...records.values()].some((b) => b.demo)) {
+    const removed = await clearDemo().catch((e) => { console.error(e); return []; });
+    if (removed.length) toast('Bouteilles d\'exemple retirées');
+  }
   if (store && records.size && copyOk) await upgradeCases().catch(console.error);
   let demoDone = true; try { demoDone = !!localStorage.getItem('cave-demo'); } catch { /* stockage bloqué */ }
-  if (store && !records.size && !demoDone) { try { localStorage.setItem('cave-demo', '1'); localStorage.setItem('cave-demo-v4', '1'); } catch { /* idem */ } await seedDemo().catch(console.error); }
+  if (store && DEV && !records.size && !demoDone) { try { localStorage.setItem('cave-demo', '1'); localStorage.setItem('cave-demo-v4', '1'); } catch { /* idem */ } await seedDemo().catch(console.error); }
   rebuildBottles(); applyVisibility(); requestAnimationFrame(frame);
   let welcomed = false; try { welcomed = !!localStorage.getItem('cave-bienvenue'); } catch { /* stockage bloqué */ }
   if (!welcomed) showWelcome();
