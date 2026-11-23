@@ -1,5 +1,5 @@
 import * as THREE from './vendor/three.module.min.js';
-import { esc, clamp, norm, RACK_ORDER, RACK_NAMES, slotId, parseId, isValidId, DEFAULT_CONFIG, CONFIG_REV, STYLES, rackGrid, casePlaces, pileOf, BOTTLE_D, moveSeparator, caseIdOf, newBottleId, pushToPile, removeFromPile, undoRemoval, normalizePile, migrateCaseRecords, placeLost, DEFAULT_STYLE, rackLimits, normalizeConfig, rackSizes, rackSize, meters, recordsIn, isNewerVersion, LEGACY_CONFIG, needsLegacyConfig, realRecordCount, shouldResetDemoToVerdelot, cellLayout, drinkSoon, qty, totalBottles, suggestions, findKnownWine, inheritableFields, needsSnapshot, copiesToDrop, backupReminderDue, lastLaunchedVersion, isDevMode, mergeVoice, DAY_MS } from './lib.js';
+import { esc, clamp, norm, RACK_ORDER, RACK_NAMES, slotId, parseId, isValidId, DEFAULT_CONFIG, CONFIG_REV, STYLES, rackGrid, casePlaces, pileOf, BOTTLE_D, moveSeparator, caseIdOf, newBottleId, pushToPile, removeFromPile, undoRemoval, normalizePile, migrateCaseRecords, placeLost, DEFAULT_STYLE, rackLimits, normalizeConfig, rackSizes, rackSize, meters, recordsIn, isNewerVersion, LEGACY_CONFIG, needsLegacyConfig, realRecordCount, shouldResetDemoToVerdelot, cellLayout, drinkSoon, qty, totalBottles, suggestions, findKnownWine, inheritableFields, needsSnapshot, copiesToDrop, backupReminderDue, lastLaunchedVersion, isDevMode, mergeVoice, undoPlaceLost, lastAtMost, DAY_MS, caveSummary } from './lib.js';
 import { openStore, openCopies } from './db.js';
 import { getApiKey, setApiKey, clearApiKey, cleanApiKey, scanLabel, readVoice, testApiKey, scanErrorMessage } from './scan.js';
 
@@ -778,8 +778,6 @@ function pick(cx, cy) {
     const l = rack.group.worldToLocal(tmpV.copy(h.point));
     // Colonne et rangée touchées (tailles éventuellement inégales), mesurées depuis l'entrée et depuis le bas
     const fromEntry = rack.flip ? rack.W / 2 - l.x : l.x + rack.W / 2, { colX, rowY } = rack.grid;
-    // Dernier bord à gauche du doigt / sous le doigt (sans findLastIndex : absent avant iOS 15.4)
-    const lastAtMost = (edges, v) => { let i = 0; while (i + 1 < edges.length && edges[i + 1] <= v) i++; return i; };
     const c = clamp(lastAtMost(colX, fromEntry), 0, rack.cols - 1), r = clamp(lastAtMost(rowY, l.y - BASE), 0, rack.rows - 1);
     const hit = { type: 'slot', key: rack.key, c, r };
     if (rack.isCases) {   // la bouteille la plus proche du doigt dans cette case, s'il y en a une sous le doigt
@@ -939,6 +937,7 @@ let scanToken = 0;   // invalide une lecture (photo ou voix) arrivée après que
 function openSheet(title, html, tall = false) {
   stopVoice(false);   // une autre fiche (ou la même redessinée) : on n'écoute plus
   $('sheetTitle').textContent = title; $('sheetBody').innerHTML = html;
+  $('sheet').classList.remove('cave');   // style sombre : posé ensuite par showMenu / showSettings seulement
   $('sheet').classList.toggle('tall', tall); $('sheet').hidden = false; $('sheetBody').scrollTop = 0;
   $('results').hidden = true;
 }
@@ -1010,7 +1009,7 @@ function showForm(id, draft = null) {
         <div id="photoZone">${draftPhoto ? `<img class="photo" src="${esc(draftPhoto)}" alt="">` : ''}</div>
         ${draftPhoto ? `<div class="btns">${hasKey ? '<button type="button" class="btn" data-act="scan">Lire l\'étiquette</button>' : ''}<button type="button" class="btn danger" data-act="nophoto">Retirer la photo</button></div>` : ''}
         <div id="voiceZone"></div>
-        <div id="scanStatus" class="scan" role="status" aria-live="polite">${hasKey ? '' : 'Astuce : activez « Lecture automatique » dans le menu pour remplir la fiche à partir d\'une photo ou de la voix.'}</div>
+        <div id="scanStatus" class="scan" role="status" aria-live="polite">${hasKey ? '' : 'Astuce : activez « Lecture automatique » (menu, « Réglages ») pour remplir la fiche à partir d\'une photo ou de la voix.'}</div>
       </div>
       <label>Nom / Domaine / Château<input name="nom" list="dl-nom" value="${v('nom')}" placeholder="Château Margaux" required></label>
       <div class="field">Couleur
@@ -1273,7 +1272,7 @@ function showScanSettings(msg = '') {
     <label class="field">Clé Google AI Studio<input id="scanKey" type="text" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="off" placeholder="${has ? 'Une clé est déjà enregistrée' : 'AIza…'}"></label>
     <div class="btns"><button class="btn primary block" data-act="scan-save">Enregistrer la clé</button><button class="btn" data-act="scan-test">Tester</button>${has ? '<button class="btn danger" data-act="scan-clear">Désactiver</button>' : ''}</div>
     <p class="help"><b>À savoir :</b> la photo, ou ce que vous dites, est envoyé à Google pour être compris. Avec l'offre gratuite, Google peut réutiliser ces contenus pour améliorer ses produits : ne photographiez que des étiquettes, et ne dites que ce qui concerne la bouteille. La clé reste uniquement sur cet appareil et n'apparaît dans aucune sauvegarde.</p>
-    <div class="btns"><button class="btn block" data-act="menu">Retour</button></div>`, true);
+    <div class="btns"><button class="btn block" data-act="settings">Retour</button></div>`, true);
 }
 /** Teste la clé (saisie ou enregistrée) et affiche le résultat dans l'écran de réglages. */
 async function checkScanKey(key, { keep }) {
@@ -1329,6 +1328,12 @@ $('sheetBody').addEventListener('click', async (e) => {
     if (!await persistBatch(put, remove)) return;
     const recs = put.filter((b) => b.id !== lost.id), q = qty(lost), n = recs.length;
     refresh(); showCase(caseId, recs.map((b) => b.id)); saved(n < q ? `${n} rangées, ${q - n} encore à ranger` : `${n} bouteille${n > 1 ? 's rangées' : ' rangée'}`);
+    offerUndoAction(n > 1 ? 'Bouteilles rangées' : 'Bouteille rangée', async () => {
+      const u = undoPlaceLost([...records.values()], lost, { put, remove });   // null si quelque chose a changé depuis
+      if (!u) return toast('Annulation impossible : ces bouteilles ont été modifiées depuis');
+      if (!await persistBatch(u.put, u.remove)) return;
+      refresh(); if (selected?.caseId === caseId) showCase(caseId); saved('Annulé : bouteilles remises « à ranger »');
+    });
   }
   else if (act === 'lost-remove') {
     const caseId = selected?.caseId, lost = caseId && bottleAt(caseId); if (!lost) return;
@@ -1354,6 +1359,7 @@ $('sheetBody').addEventListener('click', async (e) => {
   else if (act === 'snap-restore') await restoreCopy(e.target.closest('[data-snap]')?.dataset.snap);
   else if (act === 'install') showInstall();
   else if (act === 'menu') showMenu();
+  else if (act === 'settings') showSettings();
   else if (act === 'config-focus') showConfig(e.target.closest('[data-rack]')?.dataset.rack);
   else if (act === 'adjust') startAdjust(e.target.closest('[data-rack]')?.dataset.rack);
   else if (act === 'rack-tools') { const k = e.target.closest('[data-rack]')?.dataset.rack; if (racks[k]) { showRack(k); showRackTools(k); } }
@@ -1381,12 +1387,12 @@ $('sheetBody').addEventListener('click', async (e) => {
     // de fausses bouteilles aux vraies dans la cave : on demande confirmation.
     const real = realRecordCount([...records.values()]);
     if (real && !await ask(`Vous avez déjà ${real} vraie(s) fiche(s). Des bouteilles d'exemple vont se mélanger aux vôtres dans la cave.\n\nVos fiches ne sont pas modifiées : les exemples ne vont que dans les places vides, et « Retirer les bouteilles d'exemple » les enlève toutes.`, 'Ajouter quand même')) return;
-    await seedDemo(); refresh(); showMenu(); toast('Bouteilles d\'exemple ajoutées');
+    await seedDemo(); refresh(); showSettings(); toast('Bouteilles d\'exemple ajoutées');
   }
   else if (act === 'cleardemo') {
     const n = totalBottles([...records.values()].filter((b) => b.demo));
     if (!await ask(`Retirer les ${n} bouteille(s) d'exemple ? Vos vraies fiches ne sont pas touchées.`, 'Retirer')) return;
-    const removed = await clearDemo(); refresh(); showMenu();
+    const removed = await clearDemo(); refresh(); showSettings();
     if (removed.length) offerUndo('Exemples retirés', removed);
   }
 });
@@ -1495,9 +1501,11 @@ function groupRows(list) {
   }
   return out;
 }
+/** Emplacement qui n'existe plus avec les dimensions actuelles (casier réduit) : la fiche est gardée, mais pas dessinée. */
+function outOfLayout(id) { const { k, c, r } = parseId(id); return !inRack(k, c, r); }
 function rowHtml({ b, ids, n }) {
   return `<button class="row" data-goto="${b.id}" data-ids="${ids.join(',')}"><span class="dot" style="background:${typeOf(b).css}"></span>
-    <span class="main"><div class="n">${esc(b.nom || 'Sans nom')}</div><div class="s">${esc(b.appellation ? b.appellation + ' — ' : '')}${locShort(b.id)}${b.aRanger ? ' · <b>à ranger</b>' : ''}</div></span>
+    <span class="main"><div class="n">${esc(b.nom || 'Sans nom')}</div><div class="s">${esc(b.appellation ? b.appellation + ' — ' : '')}${esc(locShort(b.id))}${b.aRanger ? ' · <b>à ranger</b>' : ''}${outOfLayout(b.id) ? ' · <b>hors du rangement actuel</b>' : ''}</div></span>
     <span class="y">${esc(b.millesime || '')}${n > 1 ? ` <small>×${n}</small>` : ''}</span></button>`;
 }
 function runSearch(show = true) {
@@ -1539,27 +1547,54 @@ $('nav').addEventListener('click', (e) => {
 
 // ---------- Menu ----------
 $('menuBtn').onclick = showMenu;
+/** Pictogrammes au trait du menu (SVG en ligne : rien à charger, couleur héritée du texte). */
+const ICONS = {
+  bottle: 'M10 2h4v5l2 3v12H8V10l2-3z', glass: 'M7 3h10l-1 6a4 4 0 0 1-8 0zM12 13v7M8 21h8', grid: 'M4 4h16v16H4zM4 12h16M12 4v16',
+  shield: 'M12 3l8 3v6c0 5-4 8-8 9-4-1-8-4-8-9V6z', help: 'M12 21a9 9 0 1 0 0-18a9 9 0 1 0 0 18zM9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.7M12 17h.01',
+  sliders: 'M4 7h9M17 7h3M4 17h3M11 17h9M15 5v4M9 15v4',
+  camera: 'M3 8h4l2-3h6l2 3h4v11H3zM12 17a3.5 3.5 0 1 0 0-7a3.5 3.5 0 1 0 0 7z', restore: 'M4 12a8 8 0 1 0 2.3-5.7M4 4v4h4',
+  clock: 'M12 21a9 9 0 1 0 0-18a9 9 0 1 0 0 18zM12 7v5l3 2', phone: 'M8 2h8v20H8zM11 18h2', update: 'M20 12a8 8 0 1 1-2.3-5.7M20 4v4h-4',
+  flask: 'M9 3h6M10 3v6l-5 10h14l-5-10V3',
+};
+/** Une ligne du menu sombre ; `sub` (HTML déjà échappé) s'affiche en petit sous le libellé. */
+function caveRow(act, icon, label, sub = '') {
+  return `<button class="crow" data-act="${act}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${ICONS[icon] || ''}"/></svg>`
+    + `<span class="crow-t">${label}${sub ? `<small>${sub}</small>` : ''}</span><span class="crow-c" aria-hidden="true">›</span></button>`;
+}
+/** Menu principal : l'usage courant en deux sections ; ce qui sert rarement est dans « Réglages ». */
 function showMenu() {
   closeSheet();
   const total = Object.values(racks).reduce((s, r) => s + r.cols * r.rows, 0);
   const shown = allBottles().filter((b) => { const p = parseId(b.id); return inRack(p.k, p.c, p.r); });
   const filled = new Set(shown.map((b) => caseIdOf(b.id))).size;   // une case maçonnée compte une fois, quel que soit le nombre de bouteilles
   openSheet(config.nom, `
-    <div class="verline"><span>Version installée : <b>${esc(APP_VERSION)}</b></span><button class="btn" data-act="update-check">Mettre à jour</button></div>
-    <div class="stats"><div class="stat"><b>${totalBottles(shown)}</b><span>bouteilles</span></div><div class="stat"><b>${filled}</b><span>emplacements occupés</span></div><div class="stat"><b>${total - filled}</b><span>emplacements vides</span></div></div>
-    <div class="btns">
-      <button class="btn block" data-act="inventory">Liste de mes bouteilles</button>
-      <button class="btn block" data-act="soon">À boire bientôt</button>
-      <button class="btn block" data-act="scan-settings">Lecture automatique (photo et voix)${getApiKey() ? ' (activée)' : ''}</button>
-      <button class="btn block" data-act="config">Rangement de la cave</button>
-      <button class="btn block" data-act="export">Sauvegarder mes données</button>
-      <p class="help">${safetyLine()}</p>
-      <button class="btn block" data-act="import">Restaurer une sauvegarde</button>
-      ${copiesInfo.length ? '<button class="btn block" data-act="snapshots">Revenir en arrière (copies de sécurité)</button>' : ''}
-      <button class="btn block" data-act="install">Installer sur l'iPhone</button>
-      <button class="btn block" data-act="help">Mode d'emploi</button>
-      ${[...records.values()].some((b) => b.demo) ? '<button class="btn danger block" data-act="cleardemo">Test : retirer les bouteilles d\'exemple</button>' : DEV ? '<button class="btn block" data-act="demo">Test : ajouter des bouteilles d\'exemple</button>' : ''}
-    </div>`, true);
+    <p class="cave-sum">${esc(caveSummary(totalBottles(shown), total - filled))}</p>
+    <div class="cave-sec">Ma cave</div>
+    ${caveRow('inventory', 'bottle', 'Mes bouteilles')}
+    ${caveRow('soon', 'glass', 'À boire bientôt')}
+    ${caveRow('config', 'grid', 'Rangement de la cave')}
+    <div class="cave-sec">Mes données</div>
+    ${caveRow('export', 'shield', 'Sauvegarder mes données', `Dernière sauvegarde : ${lastBackupText()}`)}
+    ${storageProtected === false ? `<p class="cave-note warn">${storageLine()}</p>` : ''}
+    ${caveRow('settings', 'sliders', 'Réglages')}
+    ${caveRow('help', 'help', 'Mode d\'emploi')}
+    <p class="cave-foot">Version ${esc(APP_VERSION)}</p>`, true);
+  $('sheet').classList.add('cave');
+}
+/** Réglages : fonctions ponctuelles (clé de lecture, restauration, installation, mise à jour). */
+function showSettings() {
+  closeSheet();
+  const demo = [...records.values()].some((b) => b.demo);
+  openSheet('Réglages', `
+    ${caveRow('scan-settings', 'camera', 'Lecture automatique (photo et voix)', getApiKey() ? 'Activée' : 'Non activée')}
+    ${caveRow('import', 'restore', 'Restaurer une sauvegarde')}
+    ${copiesInfo.length ? caveRow('snapshots', 'clock', 'Revenir en arrière', 'Copies de sécurité') : ''}
+    ${caveRow('install', 'phone', 'Installer sur l\'iPhone')}
+    ${caveRow('update-check', 'update', 'Mettre à jour l\'application', `Version installée : ${esc(APP_VERSION)}`)}
+    ${storageProtected === null ? '' : `<p class="cave-note${storageProtected ? '' : ' warn'}">${storageLine()}</p>`}
+    ${demo ? caveRow('cleardemo', 'flask', 'Test : retirer les bouteilles d\'exemple') : DEV ? caveRow('demo', 'flask', 'Test : ajouter des bouteilles d\'exemple') : ''}
+    <div class="btns"><button class="btn block" data-act="menu">Retour au menu</button></div>`, true);
+  $('sheet').classList.add('cave');
 }
 /** Liste de toutes les fiches ; toucher une couleur filtre la liste. */
 function showInventory(filter = '') {
@@ -1698,14 +1733,25 @@ let undoTimer = null, undoState = null;   // { previous, after, count } : suppre
  * `previous` : fiches à remettre ; `after` : versions écrites par l'opération (une fiche modifiée depuis n'est pas écrasée).
  */
 function offerUndo(message, previous, after = []) {
-  undoState = undoState ? { previous: [...undoState.previous, ...previous], after: [...undoState.after, ...after], count: undoState.count + 1 } : { previous, after, count: 1 };
+  undoState = undoState && !undoState.run ? { previous: [...undoState.previous, ...previous], after: [...undoState.after, ...after], count: undoState.count + 1 } : { previous, after, count: 1 };
   $('undoText').textContent = undoState.count > 1 ? `${message} (${undoState.count} actions annulables)` : message;
+  $('undo').hidden = false; document.body.classList.add('undo-on');
+  clearTimeout(undoTimer); undoTimer = setTimeout(hideUndo, 10000);
+}
+/**
+ * « Annuler » qui exécute sa propre remise en état (quand il ne suffit pas de remettre d'anciennes fiches). Il remplace
+ * une annulation encore proposée : les deux ne se cumulent pas.
+ */
+function offerUndoAction(message, run) {
+  undoState = { run, previous: [], after: [], count: 1 };
+  $('undoText').textContent = message;
   $('undo').hidden = false; document.body.classList.add('undo-on');
   clearTimeout(undoTimer); undoTimer = setTimeout(hideUndo, 10000);
 }
 function hideUndo() { clearTimeout(undoTimer); undoState = null; $('undo').hidden = true; document.body.classList.remove('undo-on'); }
 $('undoBtn').onclick = async () => {
   const st = undoState; hideUndo(); if (!st) return;
+  if (st.run) { try { await st.run(); } catch (e) { console.error(e); toast('Annulation impossible'); } return; }
   // Pour chaque emplacement, on remet la version la plus ancienne (avant la première suppression)
   const first = new Map(); for (const b of st.previous) if (!first.has(b.id)) first.set(b.id, b);
   // Bouteilles de cases : elles reprennent leur rang, et celles posées dessus entre-temps remontent (lib.js)
@@ -1796,7 +1842,7 @@ function showWelcome() {
     <ol class="steps">
       <li><b>Choisissez un casier</b> : touchez-le sur la maquette, ou utilisez les boutons en bas de l'écran.</li>
       <li><b>Touchez une case</b> : elle s'affiche en grand avec ce qu'elle contient, et « Ajouter des bouteilles ». Touchez ensuite une bouteille pour voir sa fiche. Dans les casiers métalliques, touchez directement une place.</li>
-      <li><b>Photographiez l'étiquette ou parlez</b> : « 🎤 Parler », puis dites ce que vous savez de la bouteille (« Château Talbot 2016, j'en ai six, offert par Paul »). La fiche se remplit toute seule ; vérifiez, puis enregistrez (menu, « Lecture automatique »).</li>
+      <li><b>Photographiez l'étiquette ou parlez</b> : « 🎤 Parler », puis dites ce que vous savez de la bouteille (« Château Talbot 2016, j'en ai six, offert par Paul »). La fiche se remplit toute seule ; vérifiez, puis enregistrez (à activer une fois : menu, « Réglages », « Lecture automatique »).</li>
       <li><b>Cherchez</b> une bouteille en haut de l'écran : elle s'entoure d'orange dans la cave.</li>
     </ol>
     <p class="help">Glissez un doigt pour tourner la maquette ou faire défiler un casier, écartez deux doigts pour zoomer. Tout est enregistré sur ce téléphone, au fur et à mesure.</p>
@@ -1814,7 +1860,7 @@ function showInstall() {
   openSheet('Installer sur l\'iPhone', `
     <p class="help">1. Ouvrez cette page dans <b>Safari</b>.<br>2. Touchez le bouton <b>Partager</b> (le carré avec une flèche vers le haut).<br>3. Choisissez <b>« Sur l'écran d'accueil »</b>, puis <b>Ajouter</b>.</p>
     <p class="help">L'icône « Ma Cave » apparaît alors comme une vraie application, en plein écran, et fonctionne même sans réseau dans la cave. Les fiches sont enregistrées sur l'iPhone : pensez à faire une sauvegarde de temps en temps depuis le menu.</p>
-    <div class="btns"><button class="btn block" data-act="menu">Retour</button></div>`, true);
+    <div class="btns"><button class="btn block" data-act="settings">Retour</button></div>`, true);
 }
 async function exportData() {
   const data = JSON.stringify({ app: 'ma-cave', version: 2, appVersion: APP_VERSION, date: new Date().toISOString(), config, bouteilles: [...records.values()] });
@@ -1844,7 +1890,7 @@ async function restoreData(d, what) {
   const current = [...records.values()], real = realRecordCount(current);
   // Compte en bouteilles, sans les exemples (sinon « 1039 fiches » pour une seule vraie bouteille)
   const count = (l) => { const n = totalBottles(l.filter((b) => !b.demo && !b.vide)); return `${n} bouteille${n > 1 ? 's' : ''}${l.some((b) => b.demo) ? ', plus des exemples' : ''}`; };
-  const warn = real ? `Le contenu actuel de ce téléphone (${count(current)}) sera remplacé. Une copie de l'état actuel est gardée (menu, « Revenir en arrière »).`
+  const warn = real ? `Le contenu actuel de ce téléphone (${count(current)}) sera remplacé. Une copie de l'état actuel est gardée (menu, « Réglages », « Revenir en arrière »).`
     : 'Le rangement et les fiches de ce téléphone seront remplacés.';
   if (!await ask(`Revenir à ${what} : ${count(list)} ?\n\n${warn}`, 'Remplacer')) return;
   if (real && !await takeCopy({ raison: 'restauration' }, config, current)) return toast('Impossible de copier l\'état actuel : rien n\'a été remplacé');
@@ -1903,7 +1949,7 @@ function showCopies() {
     <div class="list">${copiesInfo.length ? copiesInfo.map((c) => { const l = copyLabel(c); return `<button class="row" data-act="snap-restore" data-snap="${esc(String(c.id))}">
       <span class="main"><div class="n">${esc(l.why)}</div><div class="s">${esc(l.sub)}</div></span></button>`; }).join('') : '<div class="empty">Aucune copie pour l\'instant.</div>'}</div>
     <p class="help">Ces copies restent sur ce téléphone : elles ne remplacent pas « Sauvegarder mes données », qui protège aussi d'une perte du téléphone.</p>
-    <div class="btns"><button class="btn block" data-act="menu">Retour</button></div>`, true);
+    <div class="btns"><button class="btn block" data-act="settings">Retour</button></div>`, true);
 }
 async function restoreCopy(id) {
   let copy;
@@ -1911,11 +1957,14 @@ async function restoreCopy(id) {
   if (!copy) return toast('Copie introuvable');
   await restoreData(copy, `la copie « ${copyLabel(copy).why.toLowerCase()} »`);
 }
-/** Texte du menu : date de la dernière sauvegarde et protection du stockage. */
-function safetyLine() {
+/** Date de la dernière sauvegarde, en mots (« hier », « il y a 3 jours », « jamais »). */
+function lastBackupText() {
   const last = Number(lsGet(BACKUP_KEY)), days = last ? Math.floor((Date.now() - last) / DAY_MS) : null;
-  const when = days === null ? 'jamais' : days < 1 ? 'aujourd\'hui' : days < 2 ? 'hier' : `il y a ${days} jours`;
-  return `Dernière sauvegarde : <b>${when}</b>${storageProtected === null ? '' : ` · Stockage protégé par l'iPhone : <b>${storageProtected ? 'oui' : 'non'}</b>${storageProtected ? '' : ' (ouvrez l\'app depuis son icône sur l\'écran d\'accueil)'}`}`;
+  return days === null ? 'jamais' : days < 1 ? 'aujourd\'hui' : days < 2 ? 'hier' : `il y a ${days} jours`;
+}
+/** Protection du stockage par l'iPhone (sans elle, Safari peut effacer les fiches d'une app peu ouverte). */
+function storageLine() {
+  return `Stockage protégé par l'iPhone : <b>${storageProtected ? 'oui' : 'non'}</b>${storageProtected ? '' : ' (ouvrez l\'app depuis son icône sur l\'écran d\'accueil)'}`;
 }
 
 // ---------- Bouteilles d'exemple (uniquement pour tester) ----------

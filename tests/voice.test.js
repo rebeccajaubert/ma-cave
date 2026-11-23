@@ -133,3 +133,7 @@ test('parseVoiceResponse : note à virgule à la française', () => {
   assert.equal(parseVoiceResponse(reply({ note: '17.5' })).note, '17,5');
   assert.equal(parseVoiceResponse(reply({ prix: 12 })).prix, '12');
 });
+
+test('parseVoiceResponse : horodatage entre parenthèses retiré aussi', () => {
+  assert.equal(parseVoiceResponse(reply({ transcription: '(00:04) Talbot 2016', nom: 'x' })).transcription, 'Talbot 2016');
+});

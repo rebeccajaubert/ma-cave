@@ -1,5 +1,6 @@
 :root {
   --navy: #10294a; --blue: #1f5fbf; --bg: #0f2a4d; --card: #ffffff; --line: #d5deea;
+  --night: #0a1d38; --night-2: #16305a; --night-line: #26436e; --cream: #f3e9d8; --gold: #c9a961;
   --text: #10294a; --muted: #5b6f8a; --soft: #f1f5fa; --danger: #b3261e;
   --sat: env(safe-area-inset-top, 0px); --sab: env(safe-area-inset-bottom, 0px);
 }
@@ -21,7 +22,7 @@ input, select, textarea { font: inherit; font-size: 17px; color: var(--text); -w
 #search::-webkit-search-cancel-button { display: none; }
 #search::placeholder { color: var(--muted); }
 #searchClear { color: var(--muted); padding: 10px; font-size: 18px; }
-#menuBtn { width: 52px; height: 52px; border-radius: 16px; background: var(--card); color: var(--navy); font-size: 24px;
+#menuBtn { width: 52px; height: 52px; border-radius: 16px; background: var(--card); color: var(--navy);
   box-shadow: 0 4px 16px rgba(4, 16, 36, .35); }
 
 #results { position: fixed; top: calc(var(--sat) + 70px); left: 12px; right: 12px; max-height: 50vh; overflow-y: auto;
@@ -58,8 +59,13 @@ input, select, textarea { font: inherit; font-size: 17px; color: var(--text); -w
 #sheet.tall { max-height: calc(100vh - var(--sat) - 76px); max-height: calc(100dvh - var(--sat) - 76px); }
 @keyframes up { from { transform: translateY(100%); } to { transform: none; } }
 #sheetHead { display: flex; align-items: flex-start; padding: 16px 16px 6px; gap: 10px; }
-#sheetTitle { flex: 1; font-size: 22px; font-weight: 700; line-height: 1.2; }
-#sheetClose { background: var(--soft); color: var(--navy); font-size: 18px; width: 40px; height: 40px; border-radius: 50%; flex: none; }
+/* padding-top : la 1re ligne du titre (22 × 1,2 ≈ 26 px) centrée sur le bouton ✕ de 44 px, même si le titre passe sur plusieurs lignes */
+#sheetTitle { flex: 1; font-size: 22px; font-weight: 700; line-height: 1.2; padding-top: 9px; }
+/* Icônes ☰ et ✕ en SVG, centrées par flex : les caractères Unicode tombaient décentrés selon la police de l'iPhone */
+#menuBtn, #sheetClose { display: flex; align-items: center; justify-content: center; padding: 0; }
+#menuBtn svg, #sheetClose svg { display: block; }
+#sheetClose { background: var(--soft); color: var(--navy); width: 44px; height: 44px;   /* 44 px : cible tactile minimale conseillée */
+  border-radius: 50%; flex: none; }
 #sheetBody { overflow-y: auto; padding: 4px 16px calc(var(--sab) + 18px); -webkit-overflow-scrolling: touch; }
 .loc { color: var(--muted); font-size: 15px; margin-bottom: 12px; line-height: 1.4; }
 .loc b { color: var(--text); font-weight: 600; }
@@ -147,9 +153,6 @@ body.undo-on #sheetBody { padding-bottom: calc(var(--sab) + 96px); }
 /* Taille d'un casier dans le réglage du rangement */
 .size { margin: 0 0 8px; font-size: 15px; font-weight: 600; color: var(--navy); }
 
-/* Version installée, en haut du menu */
-.verline { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--soft); border-radius: 14px; padding: 8px 8px 8px 14px; margin: 0 0 12px; font-size: 16px; }
-.verline .btn { flex: 0 0 auto; min-height: 44px; padding: 8px 14px; }
 
 /* Bandeau « Nouvelle version disponible » (sous la recherche) */
 #updateBar { position: fixed; top: calc(var(--sat) + 72px); left: 12px; right: 12px; z-index: 8; display: flex; align-items: center; gap: 10px;
@@ -181,3 +184,25 @@ body.adjusting #adjustBar { top: calc(var(--sat) + 12px); }
 #voiceText { width: 100%; min-height: 84px; font-size: 17px; }
 #form input.filled, #form textarea.filled { background: #fff6c8; }
 #form input, #form textarea { transition: background-color .6s; }
+
+/* Menu et Réglages « Cave sombre » : bleu nuit (celui de la cave, en plus profond), crème et or (classe posée par showMenu / showSettings) */
+#sheet.cave { background: var(--night); color: var(--cream);
+  /* filet doré sur le bord arrondi : la feuille se détache du bleu de la scène, très proche */
+  box-shadow: inset 0 1px 0 rgba(201, 169, 97, .55), 0 -8px 30px rgba(4, 16, 36, .6); }
+#sheet.cave #sheetTitle { font-family: Georgia, "Times New Roman", serif; font-weight: 400; font-size: 27px; letter-spacing: .02em;
+  text-align: center; padding-left: 54px; padding-top: 6px; }   /* décalé de la largeur du bouton ✕ (44 px) + l'écart (10 px) pour rester centré */
+#sheet.cave #sheetClose { background: var(--night-2); color: var(--gold); }
+.cave-sum { text-align: center; color: var(--gold); font-size: 15px; margin: 0 0 6px; }
+.cave-sum::before { content: ''; display: block; width: 44px; height: 1px; background: var(--gold); margin: 0 auto 10px; }
+.cave-sec { color: var(--gold); font-size: 13px; letter-spacing: .12em; text-transform: uppercase; margin: 20px 4px 2px; }
+.crow { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 60px; padding: 10px 6px; text-align: left;
+  color: var(--cream); font-size: 18px; border-bottom: 1px solid var(--night-line); }
+.crow:active { background: var(--night-2); }
+.crow svg { width: 24px; height: 24px; flex: none; color: var(--gold); }
+.crow-t { flex: 1; line-height: 1.3; }
+.crow-t small { display: block; font-size: 14px; color: var(--gold); margin-top: 2px; }
+.crow-c { color: var(--gold); font-size: 26px; line-height: 1; }
+.cave-note { color: #cfd8e6; font-size: 14px; line-height: 1.5; margin: 12px 6px; }
+.cave-note.warn { color: #f0c27a; }
+.cave-foot { text-align: center; color: #8fa3c0; font-size: 13px; margin: 20px 0 0; }
+#sheet.cave .btn { background: transparent; color: var(--cream); border-color: var(--gold); margin-top: 16px; }
