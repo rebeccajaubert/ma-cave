@@ -108,3 +108,19 @@ test('cleanApiKey : tolérant sur le format, strict sur les espaces et la longue
   assert.equal(cleanApiKey(''), '');
   assert.equal(cleanApiKey('clé avec é accent qui est assez longue'), '');
 });
+
+// Clé Gemini sur l'appareil : nettoyée à l'enregistrement, effaçable, et jamais d'erreur si le stockage est bloqué
+import { getApiKey, setApiKey, clearApiKey } from '../scan.js';
+test('clé : enregistrée nettoyée, relue, effacée ; stockage bloqué -> chaîne vide', () => {
+  const before = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  const store = new Map(), fake = (o) => Object.defineProperty(globalThis, 'localStorage', { value: o, configurable: true, writable: true });
+  try {
+    fake({ getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) });
+    const key = 'AIzaSy' + 'x'.repeat(30);
+    setApiKey(`  « ${key} »\n`); assert.equal(getApiKey(), key);
+    clearApiKey(); assert.equal(getApiKey(), '');
+    fake({ getItem() { throw new Error('bloqué'); } }); assert.equal(getApiKey(), '');
+  } finally {
+    if (before) Object.defineProperty(globalThis, 'localStorage', before); else delete globalThis.localStorage;
+  }
+});

@@ -339,6 +339,20 @@ export function placeLost(list, lost, capacity, rand = Math.random) {
 }
 
 /**
+ * « Annuler » après `placeLost` : retire les bouteilles rangées (celles qui sont encore là), retasse la pile
+ * (une bouteille posée dessus entre-temps redescend) et remet l'ancienne fiche « à ranger » telle qu'elle était.
+ * À écrire dans UNE transaction.
+ * @param {object[]} list toutes les fiches actuelles
+ * @param {object} lost l'ancienne fiche, telle qu'avant le rangement
+ * @param {string[]} addedIds identifiants des bouteilles créées par le rangement
+ * @returns {{ put: object[], remove: string[] }}
+ */
+export function undoPlaceLost(list, lost, addedIds) {
+  const gone = new Set(addedIds), left = list.filter((b) => !gone.has(b.id));
+  return { put: [lost, ...normalizePile(left, lost.id)], remove: list.filter((b) => gone.has(b.id)).map((b) => b.id) };
+}
+
+/**
  * Convertit les anciennes fiches de cases maçonnées (`K:c:r` avec une quantité) en une fiche par bouteille,
  * empilées dans leur case. Les bouteilles qui ne tiennent pas restent dans l'ancienne fiche, marquée `aRanger`.
  * @param {(k: string) => boolean} isCasesRack ce casier est-il en cases maçonnées ?
@@ -508,4 +522,17 @@ export function mergeVoice(out, { hand, auto, fields }) {
     if (v !== '') { set[f] = v; filled.push(f); } else if (auto.includes(f) && f !== 'couleur') set[f] = '';
   }
   return { set, auto: filled };
+}
+
+/**
+ * Index du dernier bord inférieur ou égal à `v` (0 si `v` est avant le premier) : la colonne ou la rangée touchée,
+ * avec des tailles éventuellement inégales. Sans `findLastIndex`, absent avant iOS 15.4.
+ * @param {number[]} edges bords croissants (le premier vaut 0)
+ * @param {number} v position du doigt, dans la même unité
+ * @returns {number}
+ */
+export function lastAtMost(edges, v) {
+  let i = 0;
+  while (i + 1 < edges.length && edges[i + 1] <= v) i++;
+  return i;
 }

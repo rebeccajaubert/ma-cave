@@ -181,3 +181,9 @@ test('normalizeConfig : un 36 × 12 choisi dans le formulaire (rev fourni) est c
   const c = normalizeConfig({ nom: 'X', rev: CONFIG_REV, racks: { ...DEFAULT_CONFIG.racks, D: { style: 'metal', cols: 36, rows: 12 } } });
   assert.equal(c.racks.D.rows, 12);
 });
+
+import { rackSizes } from '../lib.js';
+test('rackSizes : les casiers du réglage', () => {
+  assert.equal(rackSizes(DEFAULT_CONFIG), DEFAULT_CONFIG.racks);
+  assert.deepEqual(Object.keys(rackSizes(DEFAULT_CONFIG)).sort(), ['D', 'G', 'ID', 'IG']);
+});

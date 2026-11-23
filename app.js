@@ -1,5 +1,5 @@
 import * as THREE from './vendor/three.module.min.js';
-import { esc, clamp, norm, RACK_ORDER, RACK_NAMES, slotId, parseId, isValidId, DEFAULT_CONFIG, CONFIG_REV, STYLES, rackGrid, casePlaces, pileOf, BOTTLE_D, moveSeparator, caseIdOf, newBottleId, pushToPile, removeFromPile, undoRemoval, normalizePile, migrateCaseRecords, placeLost, DEFAULT_STYLE, rackLimits, normalizeConfig, rackSizes, rackSize, meters, recordsIn, isNewerVersion, LEGACY_CONFIG, needsLegacyConfig, realRecordCount, shouldResetDemoToVerdelot, cellLayout, drinkSoon, qty, totalBottles, suggestions, findKnownWine, inheritableFields, needsSnapshot, copiesToDrop, backupReminderDue, lastLaunchedVersion, isDevMode, mergeVoice, DAY_MS } from './lib.js';
+import { esc, clamp, norm, RACK_ORDER, RACK_NAMES, slotId, parseId, isValidId, DEFAULT_CONFIG, CONFIG_REV, STYLES, rackGrid, casePlaces, pileOf, BOTTLE_D, moveSeparator, caseIdOf, newBottleId, pushToPile, removeFromPile, undoRemoval, normalizePile, migrateCaseRecords, placeLost, DEFAULT_STYLE, rackLimits, normalizeConfig, rackSizes, rackSize, meters, recordsIn, isNewerVersion, LEGACY_CONFIG, needsLegacyConfig, realRecordCount, shouldResetDemoToVerdelot, cellLayout, drinkSoon, qty, totalBottles, suggestions, findKnownWine, inheritableFields, needsSnapshot, copiesToDrop, backupReminderDue, lastLaunchedVersion, isDevMode, mergeVoice, undoPlaceLost, lastAtMost, DAY_MS } from './lib.js';
 import { openStore, openCopies } from './db.js';
 import { getApiKey, setApiKey, clearApiKey, cleanApiKey, scanLabel, readVoice, testApiKey, scanErrorMessage } from './scan.js';
 
@@ -778,8 +778,6 @@ function pick(cx, cy) {
     const l = rack.group.worldToLocal(tmpV.copy(h.point));
     // Colonne et rangée touchées (tailles éventuellement inégales), mesurées depuis l'entrée et depuis le bas
     const fromEntry = rack.flip ? rack.W / 2 - l.x : l.x + rack.W / 2, { colX, rowY } = rack.grid;
-    // Dernier bord à gauche du doigt / sous le doigt (sans findLastIndex : absent avant iOS 15.4)
-    const lastAtMost = (edges, v) => { let i = 0; while (i + 1 < edges.length && edges[i + 1] <= v) i++; return i; };
     const c = clamp(lastAtMost(colX, fromEntry), 0, rack.cols - 1), r = clamp(lastAtMost(rowY, l.y - BASE), 0, rack.rows - 1);
     const hit = { type: 'slot', key: rack.key, c, r };
     if (rack.isCases) {   // la bouteille la plus proche du doigt dans cette case, s'il y en a une sous le doigt
@@ -1329,6 +1327,11 @@ $('sheetBody').addEventListener('click', async (e) => {
     if (!await persistBatch(put, remove)) return;
     const recs = put.filter((b) => b.id !== lost.id), q = qty(lost), n = recs.length;
     refresh(); showCase(caseId, recs.map((b) => b.id)); saved(n < q ? `${n} rangées, ${q - n} encore à ranger` : `${n} bouteille${n > 1 ? 's rangées' : ' rangée'}`);
+    offerUndoAction(n > 1 ? 'Bouteilles rangées' : 'Bouteille rangée', async () => {
+      const u = undoPlaceLost(allBottles(), lost, recs.map((b) => b.id));   // celles encore là ; la pile est retassée
+      if (!await persistBatch(u.put, u.remove)) return;
+      refresh(); if (selected?.caseId === caseId) showCase(caseId); saved('Annulé : bouteilles remises « à ranger »');
+    });
   }
   else if (act === 'lost-remove') {
     const caseId = selected?.caseId, lost = caseId && bottleAt(caseId); if (!lost) return;
@@ -1495,9 +1498,11 @@ function groupRows(list) {
   }
   return out;
 }
+/** Emplacement qui n'existe plus avec les dimensions actuelles (casier réduit) : la fiche est gardée, mais pas dessinée. */
+function outOfLayout(id) { const { k, c, r } = parseId(id); return !inRack(k, c, r); }
 function rowHtml({ b, ids, n }) {
   return `<button class="row" data-goto="${b.id}" data-ids="${ids.join(',')}"><span class="dot" style="background:${typeOf(b).css}"></span>
-    <span class="main"><div class="n">${esc(b.nom || 'Sans nom')}</div><div class="s">${esc(b.appellation ? b.appellation + ' — ' : '')}${locShort(b.id)}${b.aRanger ? ' · <b>à ranger</b>' : ''}</div></span>
+    <span class="main"><div class="n">${esc(b.nom || 'Sans nom')}</div><div class="s">${esc(b.appellation ? b.appellation + ' — ' : '')}${locShort(b.id)}${b.aRanger ? ' · <b>à ranger</b>' : ''}${outOfLayout(b.id) ? ' · <b>hors du rangement actuel</b>' : ''}</div></span>
     <span class="y">${esc(b.millesime || '')}${n > 1 ? ` <small>×${n}</small>` : ''}</span></button>`;
 }
 function runSearch(show = true) {
@@ -1698,14 +1703,25 @@ let undoTimer = null, undoState = null;   // { previous, after, count } : suppre
  * `previous` : fiches à remettre ; `after` : versions écrites par l'opération (une fiche modifiée depuis n'est pas écrasée).
  */
 function offerUndo(message, previous, after = []) {
-  undoState = undoState ? { previous: [...undoState.previous, ...previous], after: [...undoState.after, ...after], count: undoState.count + 1 } : { previous, after, count: 1 };
+  undoState = undoState && !undoState.run ? { previous: [...undoState.previous, ...previous], after: [...undoState.after, ...after], count: undoState.count + 1 } : { previous, after, count: 1 };
   $('undoText').textContent = undoState.count > 1 ? `${message} (${undoState.count} actions annulables)` : message;
+  $('undo').hidden = false; document.body.classList.add('undo-on');
+  clearTimeout(undoTimer); undoTimer = setTimeout(hideUndo, 10000);
+}
+/**
+ * « Annuler » qui exécute sa propre remise en état (quand il ne suffit pas de remettre d'anciennes fiches). Il remplace
+ * une annulation encore proposée : les deux ne se cumulent pas.
+ */
+function offerUndoAction(message, run) {
+  undoState = { run, previous: [], after: [], count: 1 };
+  $('undoText').textContent = message;
   $('undo').hidden = false; document.body.classList.add('undo-on');
   clearTimeout(undoTimer); undoTimer = setTimeout(hideUndo, 10000);
 }
 function hideUndo() { clearTimeout(undoTimer); undoState = null; $('undo').hidden = true; document.body.classList.remove('undo-on'); }
 $('undoBtn').onclick = async () => {
   const st = undoState; hideUndo(); if (!st) return;
+  if (st.run) return st.run();
   // Pour chaque emplacement, on remet la version la plus ancienne (avant la première suppression)
   const first = new Map(); for (const b of st.previous) if (!first.has(b.id)) first.set(b.id, b);
   // Bouteilles de cases : elles reprennent leur rang, et celles posées dessus entre-temps remontent (lib.js)

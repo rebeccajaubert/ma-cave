@@ -246,8 +246,8 @@ function numberIn(v, min, max) {
   const n = Number(t);
   return n >= min && n <= max ? n : null;
 }
-/** Retire les horodatages qu'ajoute parfois la transcription audio (« 00:04: », « [00:01] »). */
-const noTimestamps = (t) => t.replace(/\[\d{1,2}:\d{2}(?::\d{2})?\]\s*|(^|\s)\d{1,2}:\d{2}(?::\d{2})?:\s*/g, '$1').replace(/\s+/g, ' ').trim();
+/** Retire les horodatages qu'ajoute parfois la transcription audio (« 00:04: », « [00:01] », « (00:01) »). */
+const noTimestamps = (t) => t.replace(/[[(]\d{1,2}:\d{2}(?::\d{2})?[\])]\s*|(^|\s)\d{1,2}:\d{2}(?::\d{2})?:\s*/g, '$1').replace(/\s+/g, ' ').trim();
 /** Nombre écrit à la française (« 20,5 »), comme l'utilisateur le taperait ; '' si absent. */
 const frNumber = (n) => (n === null ? '' : String(n).replace('.', ','));
 const yearOf = (v) => { const m = str(v, 40).match(/\b(19|20)\d{2}\b/); return m ? m[0] : ''; };

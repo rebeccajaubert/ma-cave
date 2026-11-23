@@ -122,3 +122,26 @@ test('pile : ranger une fiche « à ranger » en haut de la pile, le reste atten
   assert.ok(r.put.every((x) => x.quantite === undefined && x.aRanger === undefined));
   assert.deepEqual(placeLost([...list, lost], lost, 2), { put: [], remove: [] });   // case pleine
 });
+
+// « Annuler » après « Les ranger dans cette case »
+import { undoPlaceLost } from '../lib.js';
+test('pile : annuler le rangement d\'une fiche « à ranger » (une partie rangée, une bouteille posée dessus entre-temps)', () => {
+  const list0 = [b('G:0:0:a', 0), b('G:0:0:b', 1)], lost = { id: 'G:0:0', nom: 'Vieux', quantite: 5, aRanger: true };
+  const r = placeLost([...list0, lost], lost, 4, () => 0.5);   // 2 rangées, 3 encore à ranger
+  const added = r.put.filter((x) => x.id !== lost.id).map((x) => x.id);
+  const now = [...apply([...list0, lost], r.put), b('G:0:0:x', 4)];
+  const u = undoPlaceLost(now, lost, added);
+  assert.deepEqual([...u.remove].sort(), [...added].sort());
+  const back = apply(now.filter((x) => !u.remove.includes(x.id)), u.put);
+  assert.deepEqual(back.find((x) => x.id === 'G:0:0'), lost);
+  assert.deepEqual(pileOf(back, 'G:0:0').map((x) => [x.id, x.pile]), [['G:0:0:a', 0], ['G:0:0:b', 1], ['G:0:0:x', 2]]);
+});
+test('pile : annuler un rangement complet remet l\'ancienne fiche supprimée ; une bouteille déjà retirée n\'est pas « retirée » deux fois', () => {
+  const lost = { id: 'G:1:1', nom: 'Vieux', quantite: 2, aRanger: true };
+  const r = placeLost([lost], lost, 33, () => 0.5);
+  assert.deepEqual(r.remove, ['G:1:1']);
+  const added = r.put.map((x) => x.id), now = r.put.slice(1);   // la première a été bue entre-temps
+  const u = undoPlaceLost(now, lost, added);
+  assert.deepEqual(u.remove, [added[1]]);
+  assert.deepEqual(u.put, [lost]);
+});
