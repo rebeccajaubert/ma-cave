@@ -122,3 +122,44 @@ test('pile : ranger une fiche « à ranger » en haut de la pile, le reste atten
   assert.ok(r.put.every((x) => x.quantite === undefined && x.aRanger === undefined));
   assert.deepEqual(placeLost([...list, lost], lost, 2), { put: [], remove: [] });   // case pleine
 });
+
+// « Annuler » après « Les ranger dans cette case » : seulement si rien n'a changé depuis (sinon on écraserait des données)
+import { undoPlaceLost } from '../lib.js';
+const placed = (list, lost, cap) => { const r = placeLost([...list, lost], lost, cap, () => 0.5); return { r, now: apply([...list, lost], r.put).filter((x) => !r.remove.includes(x.id)) }; };
+
+test('pile : annuler le rangement d\'une fiche « à ranger » (une partie rangée, une bouteille posée dessus entre-temps)', () => {
+  const list0 = [b('G:0:0:a', 0), b('G:0:0:b', 1)], lost = { id: 'G:0:0', nom: 'Vieux', quantite: 5, aRanger: true };
+  const { r, now: n0 } = placed(list0, lost, 4);   // 2 rangées, 3 encore à ranger
+  const now = [...n0, b('G:0:0:x', 4)];
+  const u = undoPlaceLost(now, lost, r);
+  const added = r.put.filter((x) => x.id !== lost.id).map((x) => x.id);
+  assert.deepEqual([...u.remove].sort(), [...added].sort());
+  const back = apply(now.filter((x) => !u.remove.includes(x.id)), u.put);
+  assert.deepEqual(back.find((x) => x.id === 'G:0:0'), lost);
+  assert.deepEqual(pileOf(back, 'G:0:0').map((x) => [x.id, x.pile]), [['G:0:0:a', 0], ['G:0:0:b', 1], ['G:0:0:x', 2]]);
+});
+
+test('pile : annuler un rangement complet remet l\'ancienne fiche supprimée', () => {
+  const lost = { id: 'G:1:1', nom: 'Vieux', quantite: 2, aRanger: true };
+  const { r, now } = placed([], lost, 33);
+  assert.deepEqual(r.remove, ['G:1:1']);
+  const u = undoPlaceLost(now, lost, r);
+  assert.deepEqual([...u.remove].sort(), r.put.map((x) => x.id).sort());
+  assert.deepEqual(u.put, [lost]);
+});
+
+test('pile : annulation refusée si une bouteille rangée ou le reste « à ranger » a changé entre-temps', () => {
+  const lost = { id: 'G:2:2', nom: 'Vieux', quantite: 4, aRanger: true };
+  const { r, now } = placed([], lost, 2);   // 2 rangées, 2 encore à ranger
+  const [first] = r.put.filter((x) => x.id !== lost.id);
+  // bouteille rangée modifiée (note ajoutée)
+  assert.equal(undoPlaceLost(now.map((x) => (x.id === first.id ? { ...x, note: '17' } : x)), lost, r), null);
+  // bouteille rangée bue ou déplacée (n'est plus là)
+  assert.equal(undoPlaceLost(now.filter((x) => x.id !== first.id), lost, r), null);
+  // reste « à ranger » modifié, ou retiré
+  assert.equal(undoPlaceLost(now.map((x) => (x.id === lost.id ? { ...x, nom: 'Autre' } : x)), lost, r), null);
+  assert.equal(undoPlaceLost(now.filter((x) => x.id !== lost.id), lost, r), null);
+  // seul le rang a changé (une bouteille du dessous a été bue) : l'annulation reste possible
+  const shifted = now.map((x) => (x.id === first.id ? { ...x, pile: x.pile + 1 } : x));
+  assert.notEqual(undoPlaceLost(shifted, lost, r), null);
+});

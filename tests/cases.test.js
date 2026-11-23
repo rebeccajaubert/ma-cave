@@ -58,3 +58,12 @@ test('moveSeparator : jamais au-delà de la taille maximale d\'une case (CASE_MA
   const r = moveSeparator([0.3, 1.4, 0.3], 0, -0.2, () => true);   // la case du milieu grandirait à 1,6 m
   assert.deepEqual(r, [0.2, 1.5, 0.3]);
 });
+
+// Toucher une case : dernier bord à gauche (ou sous) le doigt, sans findLastIndex (absent avant iOS 15.4)
+import { lastAtMost } from '../lib.js';
+test('lastAtMost : dernier bord à gauche ou en dessous du doigt', () => {
+  const e = [0, 0.5, 1.2, 1.8];
+  assert.equal(lastAtMost(e, -0.1), 0); assert.equal(lastAtMost(e, 0), 0); assert.equal(lastAtMost(e, 0.49), 0);
+  assert.equal(lastAtMost(e, 0.5), 1); assert.equal(lastAtMost(e, 1.5), 2); assert.equal(lastAtMost(e, 9), 3);
+  assert.equal(lastAtMost([0], 5), 0);
+});

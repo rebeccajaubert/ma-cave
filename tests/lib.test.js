@@ -187,3 +187,9 @@ test('caveSummary accorde au singulier et au pluriel', () => {
   assert.equal(caveSummary(1, 1), '1 bouteille · 1 place libre');
   assert.equal(caveSummary(0, 0), '0 bouteille · 0 place libre');
 });
+
+import { rackSizes } from '../lib.js';
+test('rackSizes : les casiers du réglage', () => {
+  assert.equal(rackSizes(DEFAULT_CONFIG), DEFAULT_CONFIG.racks);
+  assert.deepEqual(Object.keys(rackSizes(DEFAULT_CONFIG)).sort(), ['D', 'G', 'ID', 'IG']);
+});

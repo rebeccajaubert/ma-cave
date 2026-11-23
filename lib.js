@@ -349,6 +349,32 @@ export function placeLost(list, lost, capacity, rand = Math.random) {
   return n < q ? { put: [...put, { ...lost, quantite: q - n }], remove: [] } : { put, remove: [lost.id] };
 }
 
+/** Même fiche, au rang près (le rang change quand une bouteille du dessous est retirée, pas la bouteille). */
+function sameBottle(a, b) {
+  if (!a || !b) return false;
+  const norm = ({ pile, ...rest }) => JSON.stringify(Object.keys(rest).sort().map((k) => [k, rest[k]]));
+  return norm(a) === norm(b);
+}
+
+/**
+ * « Annuler » après `placeLost` : retire les bouteilles rangées, retasse la pile (une bouteille posée dessus
+ * entre-temps redescend) et remet l'ancienne fiche « à ranger » telle qu'elle était. Seulement si rien n'a changé
+ * depuis le rangement : une bouteille rangée modifiée, bue ou déplacée, ou un reste « à ranger » modifié ou retiré,
+ * serait écrasé ou compté deux fois ; on renvoie alors null et rien n'est annulé. À écrire dans UNE transaction.
+ * @param {object[]} list toutes les fiches actuelles
+ * @param {object} lost l'ancienne fiche, telle qu'avant le rangement
+ * @param {{put: object[], remove: string[]}} written ce que `placeLost` a écrit
+ * @returns {{ put: object[], remove: string[] } | null}
+ */
+export function undoPlaceLost(list, lost, written) {
+  const byId = new Map(list.map((b) => [b.id, b]));
+  const added = written.put.filter((b) => b.id !== lost.id), rest = written.put.find((b) => b.id === lost.id);
+  if (!added.every((b) => sameBottle(byId.get(b.id), b))) return null;
+  if (rest ? !sameBottle(byId.get(lost.id), rest) : byId.has(lost.id)) return null;
+  const gone = new Set(added.map((b) => b.id)), left = list.filter((b) => !gone.has(b.id));
+  return { put: [lost, ...normalizePile(left, lost.id)], remove: [...gone] };
+}
+
 /**
  * Convertit les anciennes fiches de cases maçonnées (`K:c:r` avec une quantité) en une fiche par bouteille,
  * empilées dans leur case. Les bouteilles qui ne tiennent pas restent dans l'ancienne fiche, marquée `aRanger`.
@@ -519,4 +545,17 @@ export function mergeVoice(out, { hand, auto, fields }) {
     if (v !== '') { set[f] = v; filled.push(f); } else if (auto.includes(f) && f !== 'couleur') set[f] = '';
   }
   return { set, auto: filled };
+}
+
+/**
+ * Index du dernier bord inférieur ou égal à `v` (0 si `v` est avant le premier) : la colonne ou la rangée touchée,
+ * avec des tailles éventuellement inégales. Sans `findLastIndex`, absent avant iOS 15.4.
+ * @param {number[]} edges bords croissants (le premier vaut 0)
+ * @param {number} v position du doigt, dans la même unité
+ * @returns {number}
+ */
+export function lastAtMost(edges, v) {
+  let i = 0;
+  while (i + 1 < edges.length && edges[i + 1] <= v) i++;
+  return i;
 }
