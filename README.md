@@ -104,6 +104,7 @@ Ajouter `?debug` à l'adresse expose `window.__cave` pour les tests dans le navi
 | `tests/` | Tests `node --test` |
 | `app.js`, `lib.js`, `db.js`, `scan.js`, `style.css` (racine) | Relais provisoires vers `js/` et `css/` : un téléphone encore en 1.0.0 en a besoin pour se mettre à jour. À supprimer dans une version suivante |
 | `.github/workflows/tests.yml` | Tests automatiques sur GitHub (`npm test` à chaque envoi et demande de fusion) |
+| `.github/workflows/deploy.yml` | Mise en ligne d'une version à la création de sa Release (ou d'une version précédente, à la main) |
 | `.claude/` | Agent de relecture de code et automatisations (voir plus bas) |
 
 Un emplacement s'identifie par `casier:colonne:rangée` (ex. `G:12:4`), colonnes comptées depuis l'entrée, rangées depuis le bas. Casiers : `G` mur gauche, `IG`/`ID` îlot gauche/droit, `D` mur droit. Dans une case maçonnée, chaque bouteille a son identifiant stable `casier:colonne:rangée:suffixe` et un champ `pile` (son rang dans la pile, 0 = coin en bas à droite) ; les tailles réglées des colonnes et rangées sont dans le réglage (`colW`, `rowH`, en mètres).
@@ -122,21 +123,29 @@ git worktree add ../app_cave-menu -b chantier/menu main
 
 Les **tests automatiques** (GitHub Actions, `.github/workflows/tests.yml`) lancent `npm test` à chaque envoi d'une branche et sur chaque demande de fusion.
 
+### Fusionner un chantier (sans mettre en ligne)
+
+1. Sur la branche : décrire les changements visibles dans `CHANGELOG.md`, sous `## [Non publié]` en tête (sans changer le numéro de version).
+2. `npm test`, vérification en local (format iPhone).
+3. `git push -u origin chantier/<nom>` puis `gh pr create` ; quand les tests GitHub sont verts : `gh pr merge`. `main` est protégée (pas d'envoi direct, tests obligatoires, branche à jour avec `main`).
+
+**Fusionner dans `main` ne met rien en ligne** : `main` rassemble ce qui partira dans la prochaine version. On peut donc fusionner plusieurs chantiers, puis les publier ensemble.
+
 ### Publier une version
 
-1. Sur la branche : mettre à jour le numéro dans `version.js` **et** `package.json`, les `?v=` de `index.html`, et ajouter l'entrée en tête de `CHANGELOG.md` (un test vérifie qu'ils concordent). Numérotation `MAJEUR.MINEUR.CORRECTIF` : correctif → CORRECTIF, nouvelle fonction → MINEUR, changement qui casse l'existant → MAJEUR.
-2. `npm test`, vérification en local (format iPhone).
-3. Envoyer la branche et ouvrir la demande de fusion : `git push -u origin chantier/<nom>` puis `gh pr create`.
-4. Quand les tests GitHub sont verts et après vérification : fusionner (`gh pr merge`). **C'est la fusion dans `main` qui met le site en ligne.** `main` est protégée : un envoi direct est refusé.
-5. Marquer la version publiée et créer sa page de Release :
+Publier = créer une **Release** GitHub. Le workflow `.github/workflows/deploy.yml` relance alors les tests et met en ligne exactement le code de cette version.
+
+1. Branche `chantier/version-X.Y.Z` : numéro dans `version.js` et `package.json`, `?v=` et table d'import de `index.html`, et `## [Non publié]` devient `## [X.Y.Z] - date` dans `CHANGELOG.md` (un test vérifie qu'ils concordent). Numérotation `MAJEUR.MINEUR.CORRECTIF` : que des corrections → CORRECTIF, au moins une nouvelle fonction → MINEUR, changement qui casse l'existant → MAJEUR.
+2. Demande de fusion et fusion, comme un chantier.
+3. Tag et Release :
    ```bash
    git switch main && git pull
    git tag -a vX.Y.Z -m "Ma Cave X.Y.Z" && git push origin vX.Y.Z
    gh release create vX.Y.Z --title "Ma Cave X.Y.Z" --notes-file notes.md
    ```
-   (`notes.md` : l'entrée de la version dans `CHANGELOG.md`.)
+   (`notes.md` : l'entrée de la version dans `CHANGELOG.md`.) Quelques minutes plus tard, le site est en ligne : le vérifier.
 
-Chaque version publiée a son tag (`v0.1.0`, `v0.3.0` … `v0.5.0`) : `git checkout vX.Y.Z` retrouve exactement le code de cette version. Revenir en arrière : `git revert <commit>` sur une branche, puis la fusionner.
+Chaque version publiée a son tag (`v0.1.0`, `v0.3.0` … `v1.0.0`) : `git checkout vX.Y.Z` retrouve exactement son code. **Revenir à une version précédente** : `gh workflow run deploy.yml -f tag=vX.Y.Z` (ou GitHub, onglet Actions, « Mise en ligne », « Run workflow »).
 
 ## Relecture de code automatisée
 

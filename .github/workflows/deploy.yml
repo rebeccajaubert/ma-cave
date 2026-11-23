@@ -1,0 +1,43 @@
+# Mise en ligne : publier une version = créer une Release GitHub (tag vX.Y.Z). Ce workflow met alors en ligne
+# EXACTEMENT le code de ce tag, après avoir relancé les tests. Fusionner dans main ne met rien en ligne.
+# Revenir à une version précédente : onglet Actions, « Mise en ligne », « Run workflow », avec le tag voulu.
+name: Mise en ligne
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Version à mettre en ligne (ex. v1.0.0)"
+        required: true
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Tests de la version à mettre en ligne
+        run: npm test
+      - name: Préparer le site (sans les fichiers de développement)
+        run: |
+          rsync -a --exclude '.git' --exclude '.github' --exclude '.claude' --exclude 'tests' --exclude 'docs' --exclude 'node_modules' --exclude '_site' ./ _site/
+          touch _site/.nojekyll
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
