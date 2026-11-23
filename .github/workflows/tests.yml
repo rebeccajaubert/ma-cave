@@ -1,0 +1,16 @@
+# Tests automatiques : à chaque envoi de code (branche ou demande de fusion), GitHub lance `npm test`.
+# Le nom du travail (« tests ») est celui que la protection de main exige avant toute fusion.
+name: Tests
+on:
+  push:
+  pull_request:
+jobs:
+  tests:
+    name: tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm test
