@@ -22,7 +22,7 @@ input, select, textarea { font: inherit; font-size: 17px; color: var(--text); -w
 #search::-webkit-search-cancel-button { display: none; }
 #search::placeholder { color: var(--muted); }
 #searchClear { color: var(--muted); padding: 10px; font-size: 18px; }
-#menuBtn { width: 52px; height: 52px; border-radius: 16px; background: var(--card); color: var(--navy); font-size: 24px;
+#menuBtn { width: 52px; height: 52px; border-radius: 16px; background: var(--card); color: var(--navy);
   box-shadow: 0 4px 16px rgba(4, 16, 36, .35); }
 
 #results { position: fixed; top: calc(var(--sat) + 70px); left: 12px; right: 12px; max-height: 50vh; overflow-y: auto;
@@ -63,7 +63,8 @@ input, select, textarea { font: inherit; font-size: 17px; color: var(--text); -w
 /* Icônes ☰ et ✕ en SVG, centrées par flex : les caractères Unicode tombaient décentrés selon la police de l'iPhone */
 #menuBtn, #sheetClose { display: flex; align-items: center; justify-content: center; padding: 0; }
 #menuBtn svg, #sheetClose svg { display: block; }
-#sheetClose { background: var(--soft); color: var(--navy); font-size: 18px; width: 40px; height: 40px; border-radius: 50%; flex: none; }
+#sheetClose { background: var(--soft); color: var(--navy); width: 44px; height: 44px;   /* 44 px : cible tactile minimale conseillée */
+  border-radius: 50%; flex: none; }
 #sheetBody { overflow-y: auto; padding: 4px 16px calc(var(--sab) + 18px); -webkit-overflow-scrolling: touch; }
 .loc { color: var(--muted); font-size: 15px; margin-bottom: 12px; line-height: 1.4; }
 .loc b { color: var(--text); font-weight: 600; }
@@ -188,7 +189,7 @@ body.adjusting #adjustBar { top: calc(var(--sat) + 12px); }
   /* filet doré sur le bord arrondi : la feuille se détache du bleu de la scène, très proche */
   box-shadow: inset 0 1px 0 rgba(201, 169, 97, .55), 0 -8px 30px rgba(4, 16, 36, .6); }
 #sheet.cave #sheetTitle { font-family: Georgia, "Times New Roman", serif; font-weight: 400; font-size: 27px; letter-spacing: .02em;
-  text-align: center; padding-left: 50px; }   /* décalé de la largeur du bouton ✕ pour rester centré */
+  text-align: center; padding-left: 54px; }   /* décalé de la largeur du bouton ✕ (44 px) + l'écart (10 px) pour rester centré */
 #sheet.cave #sheetClose { background: var(--night-2); color: var(--gold); }
 .cave-sum { text-align: center; color: var(--gold); font-size: 15px; margin: 0 0 6px; }
 .cave-sum::before { content: ''; display: block; width: 44px; height: 1px; background: var(--gold); margin: 0 auto 10px; }

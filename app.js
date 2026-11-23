@@ -1558,7 +1558,7 @@ const ICONS = {
 };
 /** Une ligne du menu sombre ; `sub` (HTML déjà échappé) s'affiche en petit sous le libellé. */
 function caveRow(act, icon, label, sub = '') {
-  return `<button class="crow" data-act="${act}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${ICONS[icon]}"/></svg>`
+  return `<button class="crow" data-act="${act}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${ICONS[icon] || ''}"/></svg>`
     + `<span class="crow-t">${label}${sub ? `<small>${sub}</small>` : ''}</span><span class="crow-c" aria-hidden="true">›</span></button>`;
 }
 /** Menu principal : l'usage courant en deux sections ; ce qui sert rarement est dans « Réglages ». */
