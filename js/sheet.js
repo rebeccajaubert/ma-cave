@@ -498,6 +498,8 @@ function startMode(type, b) {
 }
 function updateBanner() {
   if (!mode) return;
+  // Le bouton du bandeau abandonne le mode : « Annuler » pour un déplacement de case (rien n'est encore fait)
+  $('bannerDone').textContent = mode.type === 'move-case' ? 'Annuler' : 'Terminé';
   if (mode.type === 'move-case') { $('bannerText').textContent = `Touchez la case où déplacer ${mode.n > 1 ? `ces ${mode.n} bouteilles` : 'cette bouteille'}`; return; }
   const nom = mode.source.nom || 'cette bouteille';
   $('bannerText').textContent = mode.type === 'copy'

@@ -410,7 +410,9 @@ export function moveCase(list, from, to, how, { capFrom, capTo }, rand = Math.ra
   } else {
     const free = Math.max(0, capTo - dst.length);
     if (src.length > free) throw new RangeError('pas assez de place', { cause: { need: src.length, free } });
-    put = moveTo(src, to, dst.length);
+    // Par-dessus la bouteille la plus haute (et non au rang « nombre de bouteilles ») : une ancienne pile à trou
+    // (rangs 0, 1, 3) donnerait sinon deux bouteilles au même rang
+    put = moveTo(src, to, dst.length ? Math.max(...dst.map((b) => Number(b.pile) || 0)) + 1 : 0);
   }
   const remove = (how === 'swap' ? [...src, ...dst] : src).map((b) => b.id);
   const after = [...(how === 'swap' ? [] : dst), ...put];

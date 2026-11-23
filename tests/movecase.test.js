@@ -84,3 +84,11 @@ test('undoMoveCase : refusé si une des deux cases a changé depuis', () => {
   assert.equal(undoMoveCase(now.filter((x) => x.id !== 'G:1:0:a'), op), null);              // bouteille bue
   assert.equal(undoMoveCase(now.map((x) => (x.id === 'G:1:0:a' ? { ...x, note: '18' } : x)), op), null);   // modifiée
 });
+
+test('moveCase : empiler sur une pile à trou (anciennes données) -> rangs tous distincts, par-dessus', () => {
+  const list = [b('G:0:0:a', 0), b('G:1:0:x', 0), b('G:1:0:y', 1), b('G:1:0:z', 3)];
+  const now = apply(list, moveCase(list, 'G:0:0', 'G:1:0', 'stack', caps));
+  const ranks = pileOf(now, 'G:1:0').map((x) => x.pile);
+  assert.equal(new Set(ranks).size, ranks.length, 'aucun rang en double');
+  assert.equal(pileOf(now, 'G:1:0').at(-1).nom, 'G:0:0:a', 'la bouteille arrivée est en haut');
+});
