@@ -37,7 +37,7 @@ test('index.html charge les fichiers avec le numéro de la version (?v=), module
   }
 });
 
-// Relais provisoires de la racine (1.0.1) : un téléphone encore en 1.0.0 retélécharge l'ancienne liste de fichiers.
+// Relais provisoires de la racine (réorganisation du code, après 1.0.0) : un téléphone encore en 1.0.0 retélécharge l'ancienne liste de fichiers.
 // Ils renvoient vers js/ et css/, et ne font pas partie de l'application en cache.
 test('relais de la racine : renvoient vers js/ et css/, absents de APP_FILES', () => {
   const list = /APP_FILES\s*=\s*\[([^\]]+)\]/.exec(read('version.js'))?.[1] ?? '';
