@@ -803,6 +803,7 @@ let lastSlot = null;   // dernier emplacement touché, pour pré-remplir les out
 let mode = null;       // { type: 'copy' | 'move', source: fiche }
 let draftPhoto = null;
 
+// ---------- Dialogues et messages ----------
 // Demande de confirmation affichée dans l'application (les fenêtres du navigateur sont parfois bloquées)
 function ask(message, okLabel = 'Continuer', cancelLabel = 'Annuler') {
   return new Promise((res) => {
@@ -813,6 +814,7 @@ function ask(message, okLabel = 'Continuer', cancelLabel = 'Annuler') {
 }
 function toast(msg) { const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => (t.hidden = true), 2000); }
 
+// ---------- Toucher un emplacement ----------
 async function onTap(cx, cy) {
   const hit = pick(cx, cy);
   if (!hit) { if (!mode && !$('sheet').hidden) closeSheet(); return; }
@@ -1862,6 +1864,7 @@ function showInstall() {
     <p class="help">L'icône « Ma Cave » apparaît alors comme une vraie application, en plein écran, et fonctionne même sans réseau dans la cave. Les fiches sont enregistrées sur l'iPhone : pensez à faire une sauvegarde de temps en temps depuis le menu.</p>
     <div class="btns"><button class="btn block" data-act="settings">Retour</button></div>`, true);
 }
+// ---------- Sauvegarde en fichier et restauration ----------
 async function exportData() {
   const data = JSON.stringify({ app: 'ma-cave', version: 2, appVersion: APP_VERSION, date: new Date().toISOString(), config, bouteilles: [...records.values()] });
   const name = `ma-cave-${new Date().toISOString().slice(0, 10)}.json`;
@@ -2043,9 +2046,9 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
-if (new URLSearchParams(location.search).has('debug')) window.__cave = { tapSlot, selectSlot, saveRecord, deleteRecord, get store() { return store; }, records, view, hero, camera, get heroAnim() { return heroAnim; } };   // pour les tests automatiques
 
 // ---------- Démarrage ----------
+if (new URLSearchParams(location.search).has('debug')) window.__cave = { tapSlot, selectSlot, saveRecord, deleteRecord, get store() { return store; }, records, view, hero, camera, get heroAnim() { return heroAnim; } };   // pour les tests automatiques
 (async function start() {
   try {
     store = await openStore();
