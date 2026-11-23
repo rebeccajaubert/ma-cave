@@ -1009,7 +1009,7 @@ function showForm(id, draft = null) {
         <div id="photoZone">${draftPhoto ? `<img class="photo" src="${esc(draftPhoto)}" alt="">` : ''}</div>
         ${draftPhoto ? `<div class="btns">${hasKey ? '<button type="button" class="btn" data-act="scan">Lire l\'étiquette</button>' : ''}<button type="button" class="btn danger" data-act="nophoto">Retirer la photo</button></div>` : ''}
         <div id="voiceZone"></div>
-        <div id="scanStatus" class="scan" role="status" aria-live="polite">${hasKey ? '' : 'Astuce : activez « Lecture automatique » dans le menu pour remplir la fiche à partir d\'une photo ou de la voix.'}</div>
+        <div id="scanStatus" class="scan" role="status" aria-live="polite">${hasKey ? '' : 'Astuce : activez « Lecture automatique » (menu, « Réglages ») pour remplir la fiche à partir d\'une photo ou de la voix.'}</div>
       </div>
       <label>Nom / Domaine / Château<input name="nom" list="dl-nom" value="${v('nom')}" placeholder="Château Margaux" required></label>
       <div class="field">Couleur
@@ -1842,7 +1842,7 @@ function showWelcome() {
     <ol class="steps">
       <li><b>Choisissez un casier</b> : touchez-le sur la maquette, ou utilisez les boutons en bas de l'écran.</li>
       <li><b>Touchez une case</b> : elle s'affiche en grand avec ce qu'elle contient, et « Ajouter des bouteilles ». Touchez ensuite une bouteille pour voir sa fiche. Dans les casiers métalliques, touchez directement une place.</li>
-      <li><b>Photographiez l'étiquette ou parlez</b> : « 🎤 Parler », puis dites ce que vous savez de la bouteille (« Château Talbot 2016, j'en ai six, offert par Paul »). La fiche se remplit toute seule ; vérifiez, puis enregistrez (menu, « Lecture automatique »).</li>
+      <li><b>Photographiez l'étiquette ou parlez</b> : « 🎤 Parler », puis dites ce que vous savez de la bouteille (« Château Talbot 2016, j'en ai six, offert par Paul »). La fiche se remplit toute seule ; vérifiez, puis enregistrez (à activer une fois : menu, « Réglages », « Lecture automatique »).</li>
       <li><b>Cherchez</b> une bouteille en haut de l'écran : elle s'entoure d'orange dans la cave.</li>
     </ol>
     <p class="help">Glissez un doigt pour tourner la maquette ou faire défiler un casier, écartez deux doigts pour zoomer. Tout est enregistré sur ce téléphone, au fur et à mesure.</p>
@@ -1890,7 +1890,7 @@ async function restoreData(d, what) {
   const current = [...records.values()], real = realRecordCount(current);
   // Compte en bouteilles, sans les exemples (sinon « 1039 fiches » pour une seule vraie bouteille)
   const count = (l) => { const n = totalBottles(l.filter((b) => !b.demo && !b.vide)); return `${n} bouteille${n > 1 ? 's' : ''}${l.some((b) => b.demo) ? ', plus des exemples' : ''}`; };
-  const warn = real ? `Le contenu actuel de ce téléphone (${count(current)}) sera remplacé. Une copie de l'état actuel est gardée (menu, « Revenir en arrière »).`
+  const warn = real ? `Le contenu actuel de ce téléphone (${count(current)}) sera remplacé. Une copie de l'état actuel est gardée (menu, « Réglages », « Revenir en arrière »).`
     : 'Le rangement et les fiches de ce téléphone seront remplacés.';
   if (!await ask(`Revenir à ${what} : ${count(list)} ?\n\n${warn}`, 'Remplacer')) return;
   if (real && !await takeCopy({ raison: 'restauration' }, config, current)) return toast('Impossible de copier l\'état actuel : rien n\'a été remplacé');

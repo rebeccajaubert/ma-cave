@@ -3,6 +3,23 @@
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), versionnement [sémantique](https://semver.org/lang/fr/) :
 `MAJEUR.MINEUR.CORRECTIF`. Le numéro de version est défini dans `version.js` (voir README, « Publier une version »).
 
+## [1.0.0] - 2026-11-23
+
+### Ajouté
+- **Nouveau menu « Cave sombre »**, plus simple : bordeaux, crème et or, en deux sections. « Ma cave » : Mes bouteilles, À boire bientôt, Rangement de la cave. « Mes données » : Sauvegarder (avec la date de la dernière sauvegarde), Réglages, Mode d'emploi. En tête, le nom de la cave et « 142 bouteilles · 18 places libres » ; la version en bas.
+- **Écran « Réglages »** pour ce qui sert rarement : lecture automatique (photo et voix), restaurer une sauvegarde, revenir en arrière, installer sur l'iPhone, mettre à jour l'application, état du stockage protégé. « Retour » ramène des écrans ouverts depuis Réglages à Réglages.
+- « Annuler » après « Les ranger dans cette case » (fiches « à ranger ») : les bouteilles rangées repartent et l'ancienne fiche revient. Refusé, sans rien toucher, si une de ces bouteilles a été modifiée, bue ou déplacée entre-temps.
+
+### Modifié
+- « Mettre à jour » n'est plus en haut du menu : il est dans Réglages (« Mettre à jour l'application », avec la version installée). Le bandeau vert annonce toujours une nouvelle version au lancement.
+
+### Corrigé
+- Les listes signalent une fiche dont l'emplacement n'existe plus avec les dimensions actuelles (« hors du rangement actuel »).
+- Saisie à la voix : les horodatages « (00:04) » sont aussi retirés du texte compris.
+
+### Technique
+- Tests ajoutés (phrase de résumé du menu, choix de la case touchée, annulation du rangement, stockage de la clé Gemini, `rackSizes`).
+
 ## [0.5.0] - 2026-11-22
 
 ### Ajouté

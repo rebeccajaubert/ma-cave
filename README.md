@@ -16,11 +16,12 @@ Application web installable (PWA) : pas d'App Store, pas de compte, gratuite. Le
 - **Plusieurs bouteilles par emplacement** (− / +) dans les autres rangements, et **même vin à plusieurs endroits** (« J'ai la même ailleurs »).
 - **Vider** une case (depuis sa fiche), une colonne, une rangée ou tout un casier (menu → *Rangement de la cave* → *Gérer*), avec **Annuler** pendant 10 secondes.
 - **À boire bientôt**, **filtre par couleur**, **mode d'emploi** au premier lancement.
+- **Menu** (☰) simple, bordeaux et or : *Ma cave* (Mes bouteilles, À boire bientôt, Rangement de la cave), *Mes données* (Sauvegarder, Réglages, Mode d'emploi). Ce qui sert rarement est dans **Réglages** : lecture automatique, restaurer une sauvegarde, revenir en arrière, installer sur l'iPhone, mettre à jour.
 - **Recherche** par nom, année, appellation, région… ; les résultats s'entourent d'un anneau orange dans la cave ; en touchant un résultat, seules les bouteilles de ce vin restent entourées.
 - **Suggestions de saisie** à partir des fiches existantes.
 - **Lecture automatique** (optionnelle, voir ci-dessous) : par **photo** de l'étiquette, ou **à la voix** (« 🎤 Parler » : on décrit la bouteille naturellement, l'IA range chaque information dans la bonne case ; texte compris modifiable, dictée du clavier en secours). On vérifie toujours avant d'enregistrer.
 - **Sauvegarde et restauration** en fichier, **dimensions réglables**, **mode hors-ligne**.
-- **Protection des données** : copie de sécurité sur le téléphone avant chaque nouvelle version et avant chaque restauration (menu → *Revenir en arrière*), rappel de sauvegarde après un mois, stockage protégé demandé à l'iPhone.
+- **Protection des données** : copie de sécurité sur le téléphone avant chaque nouvelle version et avant chaque restauration (menu → *Réglages* → *Revenir en arrière*), rappel de sauvegarde après un mois, stockage protégé demandé à l'iPhone.
 
 Un emplacement est soit *enregistré* (une fiche existe : la bouteille apparaît dans le casier), soit *non enregistré* (rien n'apparaît ; au toucher, la bouteille sort sans étiquette et propose de créer sa fiche).
 
@@ -32,7 +33,7 @@ Un emplacement est soit *enregistré* (une fiche existe : la bouteille apparaît
 
 ### Mettre à jour
 
-La version installée est affichée **en haut du menu** (bouton ☰ en haut à droite), avec un bouton **« Mettre à jour »**. Au lancement, un bandeau vert annonce aussi toute nouvelle version publiée. La mise à jour retélécharge l'application depuis le site ; les bouteilles, les réglages et la clé de lecture sont conservés.
+La version installée est affichée **en bas du menu** (bouton ☰ en haut à droite). Pour mettre à jour : menu → *Réglages* → **« Mettre à jour l'application »**. Au lancement, un bandeau vert annonce aussi toute nouvelle version publiée. La mise à jour retélécharge l'application depuis le site ; les bouteilles, les réglages et la clé de lecture sont conservés.
 
 Les toutes premières versions (avant 0.3.1) n'ont pas ce bouton et peuvent rester bloquées, dans l'app comme dans Safari. **Dépannage** : ouvrir <https://rebeccajaubert.github.io/ma-cave/maj.html> dans Safari. Cette page retélécharge l'application et retire l'ancienne copie hors-ligne, sans toucher aux bouteilles, aux réglages ni à la clé. Pour une icône d'écran d'accueil restée bloquée, la solution reste de la supprimer puis de réinstaller depuis Safari (cela efface les fiches de cette icône).
 
@@ -56,7 +57,7 @@ Réglage par défaut (cave de Verdelot) : couloir de gauche en cases maçonnées
 La photo de l'étiquette, ou l'enregistrement de ce qui est dit (« 🎤 Parler »), est envoyé à l'API **Gemini** de Google pour remplir la fiche. Il faut une clé gratuite :
 
 1. Aller sur <https://aistudio.google.com/apikey>, se connecter, « Create API key » (gratuit, sans carte bancaire).
-2. Dans l'app : menu → **Lecture automatique (photo et voix)** → coller la clé → **Enregistrer la clé** (elle est testée). À faire une fois sur chaque appareil.
+2. Dans l'app : menu → *Réglages* → **Lecture automatique (photo et voix)** → coller la clé → **Enregistrer la clé** (elle est testée). À faire une fois sur chaque appareil.
 
 Il n'y a volontairement **pas de fichier `.env`** : l'app n'a pas de serveur, et une clé placée dans le code serait publique sur GitHub.
 
@@ -70,7 +71,7 @@ Il n'y a volontairement **pas de fichier `.env`** : l'app n'a pas de serveur, et
 
 - Les fiches sont dans **IndexedDB** (navigateur de l'appareil). Supprimer l'icône ou effacer les données du site les efface : faire une **sauvegarde** (menu → *Sauvegarder mes données*) de temps en temps ; l'app le rappelle si la dernière date de plus d'un mois (au plus une fois par semaine).
 - Une mise à jour ne touche pas aux fiches. Au premier lancement d'une nouvelle version, l'app copie d'abord fiches et rangement dans une base à part (`cave-a-vin-copies`, les 4 plus récentes) ; si la copie échoue, elle ne transforme pas les fiches. Restaurer (fichier ou copie) copie aussi l'état actuel avant de le remplacer.
-- Au démarrage, l'app demande à l'iPhone de ne pas vider son stockage pour faire de la place (`navigator.storage.persist()`) ; la réponse est affichée dans le menu.
+- Au démarrage, l'app demande à l'iPhone de ne pas vider son stockage pour faire de la place (`navigator.storage.persist()`) ; la réponse est affichée dans *Réglages* (et dans le menu si elle est « non »).
 - Chaque ajout, modification ou suppression est écrit immédiatement sur l'appareil.
 - Rien n'est envoyé en ligne, sauf la photo d'étiquette ou l'enregistrement de la voix, quand on utilise la lecture automatique.
 
@@ -86,7 +87,7 @@ npm run serve     # serveur local sur http://localhost:8765  (ou : python3 -m ht
 Pour essayer sur un iPhone du même Wi-Fi : `http://<adresse-IP-du-Mac>:8765/?debug` (sans `?debug`, une adresse IP se comporte comme le site publié : pas de bouteilles d'exemple ; le service worker, donc le mode hors-ligne, ne s'active qu'en HTTPS).
 Ajouter `?debug` à l'adresse expose `window.__cave` pour les tests dans le navigateur.
 
-**Bouteilles d'exemple : en développement seulement.** Sur le serveur local (`localhost`) ou avec `?debug` dans l'adresse, une cave vide se remplit de bouteilles d'exemple au premier lancement, et le menu propose « Test : ajouter / retirer des bouteilles d'exemple ». Sur le site publié, aucun exemple n'est ajouté, et ceux laissés par une ancienne version sont retirés au lancement (après la copie de sécurité), sans toucher aux vraies fiches. Ouvrir le site publié avec `?debug` ajoute donc des exemples à une cave vide, retirés au lancement suivant sans `?debug`.
+**Bouteilles d'exemple : en développement seulement.** Sur le serveur local (`localhost`) ou avec `?debug` dans l'adresse, une cave vide se remplit de bouteilles d'exemple au premier lancement, et *Réglages* propose « Test : ajouter / retirer des bouteilles d'exemple ». Sur le site publié, aucun exemple n'est ajouté, et ceux laissés par une ancienne version sont retirés au lancement (après la copie de sécurité), sans toucher aux vraies fiches. Ouvrir le site publié avec `?debug` ajoute donc des exemples à une cave vide, retirés au lancement suivant sans `?debug`.
 
 ### Structure
 
