@@ -11,7 +11,7 @@ import { getApiKey, setApiKey, clearApiKey, cleanApiKey, scanLabel, readVoice, t
    apparaît dans le casier, avec son étiquette), soit « non enregistré »
    (aucune fiche : rien n'apparaît).
    Organisation : lib.js (fonctions pures testées), db.js (stockage local),
-   scan.js (lecture d'étiquette), app.js (scène 3D et interface).
+   scan.js (lecture automatique : photo d'étiquette et voix), app.js (scène 3D et interface).
    ============================================================ */
 
 const $ = (id) => document.getElementById(id);
@@ -934,7 +934,7 @@ function goTo(id, ids = '') {
 }
 
 // ---------- Fiche (panneau du bas) ----------
-let scanToken = 0;   // invalide une lecture d'étiquette arrivée après que le formulaire a été quitté
+let scanToken = 0;   // invalide une lecture (photo ou voix) arrivée après que le formulaire a été quitté ou redessiné
 
 function openSheet(title, html, tall = false) {
   stopVoice(false);   // une autre fiche (ou la même redessinée) : on n'écoute plus
@@ -1132,6 +1132,9 @@ async function runScan() {
 // ---------- Saisie à la voix ----------
 let voice = null;              // enregistrement en cours : { rec, stream, chunks, timer, started, token, send }
 const VOICE_MAX_S = 60;        // au-delà, l'enregistrement s'arrête et part tout seul
+// Boutons photo désactivés pendant l'écoute : une photo (ou sa lecture) redessinerait la fiche ou changerait le jeton,
+// et l'enregistrement serait perdu
+const PHOTO_ACTS = '[data-act=photo], [data-act=scan], [data-act=nophoto]';
 const listOf = (s) => (s ? s.split(',').filter(Boolean) : []);
 function markHand(form, name) { const h = listOf(form.dataset.hand); if (!h.includes(name)) { h.push(name); form.dataset.hand = h.join(','); } }
 
@@ -1149,6 +1152,7 @@ function tickVoice() {
   if (!voice) return;
   const s = Math.floor((Date.now() - voice.started) / 1000), btn = $('voiceBtn');
   if (s >= VOICE_MAX_S) { stopVoice(true); return; }
+  $('form')?.querySelectorAll(PHOTO_ACTS).forEach((b) => { b.disabled = true; });
   if (btn) { btn.classList.add('rec'); btn.querySelector('.ico').textContent = '■'; btn.querySelector('.lbl').textContent = `J'ai fini (${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')})`; }
 }
 /** Commence l'écoute. Sans micro (refusé, ou impossible sur cet appareil) : le champ texte prend le relais. */
@@ -1183,7 +1187,7 @@ async function startVoice() {
     }
     if (!v.send) return;
     const blob = new Blob(v.chunks, { type: rec.mimeType || type || 'audio/mp4' });
-    if (!blob.size) { const st = $('scanStatus'); if (st) { st.className = 'scan err'; st.textContent = scanErrorMessage({ kind: 'empty' }); } return; }
+    if (!blob.size) { if (v.token === scanToken && $('form')) voiceError(scanErrorMessage({ kind: 'empty' })); return; }
     const fr = new FileReader();
     fr.onerror = () => { if (v.token === scanToken && $('form')) voiceError('L\'enregistrement n\'a pas pu être lu : réessayez, ou écrivez ci-dessous.'); };
     fr.onload = () => {
@@ -1205,6 +1209,7 @@ function stopVoice(send) {
   const st = $('scanStatus'); if (send && st) { st.className = 'scan busy'; st.textContent = 'Envoi de ce que vous avez dit…'; }
 }
 function resetVoiceBtn() {
+  $('form')?.querySelectorAll(PHOTO_ACTS).forEach((b) => { b.disabled = false; });
   const btn = $('voiceBtn');
   if (btn) { btn.classList.remove('rec'); btn.querySelector('.ico').textContent = '🎤'; btn.querySelector('.lbl').textContent = $('voiceText')?.value ? 'Reparler' : 'Parler'; }
 }
@@ -1219,7 +1224,11 @@ function voiceError(msg) {
  */
 async function runVoice({ audio, text }) {
   const form = $('form'), key = getApiKey();
-  if (!form || !key || form.dataset.scanning) return;
+  if (!form || !key) return;
+  if (form.dataset.scanning) {   // une lecture (photo ou voix) est en cours : on attend qu'elle finisse, sans perdre ce qui a été dit
+    for (let i = 0; i < 120 && $('form') === form && form.dataset.scanning; i++) await new Promise((r) => setTimeout(r, 250));
+    if ($('form') !== form || form.dataset.scanning) return;   // fiche quittée, ou lecture toujours bloquée après 30 s
+  }
   const before = audio ? ($('voiceText')?.value || '').trim() : '';
   if (!audio && !String(text).trim()) { showVoiceZone('', 'Écrivez ou dictez quelques mots sur la bouteille, puis touchez « Remplir la fiche ».'); return; }
   form.dataset.scanning = '1';
@@ -1252,7 +1261,7 @@ async function runVoice({ audio, text }) {
   }
 }
 
-/** Réglages de la lecture d'étiquette : clé Google, test, désactivation. */
+/** Réglages de la lecture automatique (photo et voix) : clé Google, test, désactivation. */
 function showScanSettings(msg = '') {
   const has = !!getApiKey();
   openSheet('Lecture automatique (photo et voix)', `

@@ -1,9 +1,10 @@
 /**
- * Lecture automatique d'une étiquette de vin à partir d'une photo, avec l'API Gemini de Google.
+ * Lecture automatique avec l'API Gemini de Google : étiquette de vin (photo), ou description de la bouteille
+ * dite à voix haute (enregistrement audio) ou écrite.
  *
  * - La clé d'API gratuite (Google AI Studio) est saisie par l'utilisateur et gardée UNIQUEMENT
  *   sur son appareil (localStorage). Elle n'est jamais dans le code ni sur GitHub.
- * - La photo est envoyée à Google pour analyse. Avec l'offre gratuite, Google peut réutiliser
+ * - La photo ou l'enregistrement est envoyé à Google pour analyse. Avec l'offre gratuite, Google peut réutiliser
  *   ces contenus pour améliorer ses produits : l'écran de réglages le dit clairement.
  * - Rien n'est inventé : les champs illisibles restent vides et sont validés avant d'être proposés.
  *
@@ -247,6 +248,8 @@ function numberIn(v, min, max) {
 }
 /** Retire les horodatages qu'ajoute parfois la transcription audio (« 00:04: », « [00:01] »). */
 const noTimestamps = (t) => t.replace(/\[\d{1,2}:\d{2}(?::\d{2})?\]\s*|(^|\s)\d{1,2}:\d{2}(?::\d{2})?:\s*/g, '$1').replace(/\s+/g, ' ').trim();
+/** Nombre écrit à la française (« 20,5 »), comme l'utilisateur le taperait ; '' si absent. */
+const frNumber = (n) => (n === null ? '' : String(n).replace('.', ','));
 const yearOf = (v) => { const m = str(v, 40).match(/\b(19|20)\d{2}\b/); return m ? m[0] : ''; };
 
 /**
@@ -264,7 +267,7 @@ export function parseVoiceResponse(json) {
     appellation: str(raw.appellation), region: str(raw.region), cepage: str(raw.cepage),
     couleur,
     quantite: q !== null && Number.isInteger(q) ? q : null,
-    prix: prix === null ? '' : String(prix), note: note === null ? '' : String(note),
+    prix: frNumber(prix), note: frNumber(note),
     commentaire: str(raw.commentaire, 300),
   };
 }
@@ -294,28 +297,6 @@ export async function readVoice({ audio, text, before, apiKey, year, fetchFn = f
 
 /** Vérifie la clé avec une requête texte minuscule (sans photo). Renvoie true si Google l'accepte. */
 export async function testApiKey(apiKey, fetchFn = fetch) {
-  if (!apiKey) throw new ScanError('nokey');
-  let lastDetail = '', notFound = 0;
-  for (const model of MODELS) {
-    const ctrl = new AbortController(), timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
-    let res, body;
-    try {
-      res = await fetchFn(`${ENDPOINT}${model}:generateContent`, {
-        method: 'POST', signal: ctrl.signal, headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
-        body: JSON.stringify({ contents: [{ parts: [{ text: 'Réponds : OK' }] }], generationConfig: { maxOutputTokens: 8 } }),
-      });
-      body = await readJson(res, ctrl);
-    } catch (e) {
-      throw new ScanError(e?.name === 'AbortError' ? 'timeout' : 'network', String(e?.message ?? e));
-    } finally { clearTimeout(timer); }
-    if (res.ok) return true;
-    const msg = String(body?.error?.message ?? '');
-    lastDetail = `${res.status} ${msg}`;
-    if (res.status === 429) throw new ScanError('quota', lastDetail);
-    if (res.status === 401 || res.status === 403 || /api key/i.test(msg)) throw new ScanError('key', lastDetail);
-    if (res.status >= 500) throw new ScanError('server', lastDetail);
-    if (res.status === 404) notFound++;
-  }
-  if (notFound === MODELS.length) throw new ScanError('model', lastDetail);
-  throw new ScanError('format', lastDetail || 'aucun modèle disponible');
+  return callGemini({ apiKey, fetchFn, parse: () => true,
+    attempts: [{ contents: [{ parts: [{ text: 'Réponds : OK' }] }], generationConfig: { maxOutputTokens: 8 } }] });
 }

@@ -9,6 +9,7 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), ver
 - **Remplir une fiche en parlant.** En haut de la fiche, deux gros boutons : « 📷 Photo de l'étiquette » et « 🎤 Parler ». On touche « Parler », on décrit la bouteille naturellement (« Château Talbot 2016, Saint-Julien, j'en ai six, offert par Paul, à boire avant 2030 »), puis « J'ai fini » : l'IA (Gemini) range chaque information dans la bonne case — nom, couleur, millésime, « à boire jusqu'en », appellation, région, cépage, nombre de bouteilles, prix par bouteille, note, commentaires. On vérifie, puis on enregistre.
 - « J'ai compris : … » affiche le texte compris, modifiable ; « Remplir la fiche » le renvoie. « Reparler » complète ou corrige (« non, c'est 2015 »). Sans micro (refusé ou indisponible), on peut dicter avec le micro du clavier ou écrire.
 - Ce que la voix remplit remplace la valeur du champ, sauf ce qui a été tapé à la main dans la fiche. Rien n'est enregistré sans « Enregistrer ».
+- Prix et note compris à la voix sont écrits à la française (« 20,5 »). Pendant l'écoute, les boutons de photo sont désactivés (une photo aurait fait perdre l'enregistrement).
 
 ### Modifié
 - Le réglage s'appelle « Lecture automatique (photo et voix) » ; il prévient que la photo ou ce qui est dit est envoyé à Google.

@@ -30,7 +30,7 @@ test('parseVoiceResponse : normalise les nombres, rejette le reste', () => {
   const r = parseVoiceResponse(reply({ transcription: ' Talbot  2016 ', nom: 'Château Talbot', millesime: '16', apogee: 'avant 2030',
     couleur: 'Rouge', quantite: 'six', prix: '20,50 €', note: '17/20', commentaire: 'x'.repeat(400), region: '<b>Bordeaux</b>' }));
   assert.equal(r.transcription, 'Talbot 2016'); assert.equal(r.millesime, ''); assert.equal(r.apogee, '2030');
-  assert.equal(r.couleur, 'rouge'); assert.equal(r.quantite, null); assert.equal(r.prix, '20.5'); assert.equal(r.note, '17');
+  assert.equal(r.couleur, 'rouge'); assert.equal(r.quantite, null); assert.equal(r.prix, '20,5');   // écrit à la française, comme on le taperait assert.equal(r.note, '17');
   assert.equal(r.commentaire.length, 300); assert.equal(r.region, '<b>Bordeaux</b>');   // échappé à l'affichage, pas ici
   assert.equal(parseVoiceResponse(reply({ quantite: 6, note: '25', prix: '-3' })).quantite, 6);
   assert.equal(parseVoiceResponse(reply({ note: '25' })).note, '');
@@ -127,3 +127,8 @@ test('parseVoiceResponse : les horodatages de la transcription audio sont retir�
   assert.equal(t('à boire vers 2030'), 'à boire vers 2030');
 });
 test('voicePrompt : pas d\'horodatage dans la transcription', () => assert.match(voicePrompt(2026), /horodatage/));
+
+test('parseVoiceResponse : note à virgule à la française', () => {
+  assert.equal(parseVoiceResponse(reply({ note: '17.5' })).note, '17,5');
+  assert.equal(parseVoiceResponse(reply({ prix: 12 })).prix, '12');
+});
