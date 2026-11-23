@@ -7,7 +7,7 @@ import { WINE_FIELDS, addToCase, capacityOf, isCasesRack, locText, removeBottles
 import { CONFIG_KEY, DEV, TYPES, allBottles, bottleAt, deleteRecord, persistBatch, records, saveRecord, saved, typeOf } from './data.js';
 import { clearDemo, seedDemo } from './demo.js';
 import { clearPart, confirmConfigChange, pickStyle, showConfig, showInstall, showInventory, showMenu, showRackTools, showSettings, showSoon, showWelcome, stepTool } from './menu.js';
-import { BOTTLE_OUT, adjust, bottleLocal, caseLocal, clampView, dFor, dMax, endAdjust, focusCase, focusSlot, hideHero, highlighted, inRack, presentBottle, racks, rebuildBottles, restV, rk, selRing, setHighlight, setPicked, showRack, slotWorld, startAdjust, view, viewW } from './scene.js';
+import { BOTTLE_OUT, adjust, bottleLocal, caseLocal, clampView, dFor, dMax, focusCase, focusSlot, hideHero, highlighted, inRack, presentBottle, racks, rebuildBottles, restV, rk, selRing, setHighlight, setPicked, showRack, slotWorld, startAdjust, view, viewW } from './scene.js';
 import { runSearch } from './search.js';
 import { pick } from './touch.js';
 import { offerUndo, offerUndoAction } from './undo.js';
