@@ -5,7 +5,7 @@ import { toast } from './util.js';
 // ---------- Configuration (dimensions de la cave, gardées sur l'appareil) ----------
 export const CONFIG_KEY = 'cave-config-v4';   // les anciennes clés (v3, v2) sont relues et converties par normalizeConfig
 
-export function loadConfig() {
+function loadConfig() {
   try { return normalizeConfig(JSON.parse(localStorage.getItem(CONFIG_KEY) || localStorage.getItem('cave-config-v3') || localStorage.getItem('cave-config-v2') || 'null')); }
   catch { return { ...DEFAULT_CONFIG }; }
 }
@@ -25,6 +25,7 @@ export const UNKNOWN_GLASS = 0x14220e;
 
 // ---------- Fiches : en mémoire, et enregistrées sur l'appareil à chaque modification ----------
 export let store = null;                // accès à la base locale (null si le stockage est indisponible)
+/** Accès à la base locale, ouvert au démarrage (null si le stockage est indisponible). */
 export function setStore(s) { store = s; }
 // Mode développement (serveur local ou ?debug) : seul mode où existent les bouteilles d'exemple
 export const DEV = isDevMode(location.hostname, location.search);

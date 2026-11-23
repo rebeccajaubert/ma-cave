@@ -36,3 +36,16 @@ test('index.html charge les fichiers avec le numéro de la version (?v=), module
     for (const [, f] of read(m).matchAll(/from '\.\/([^']+)'/g)) assert.ok(html.includes(`"./js/${f}": "./js/${f}?v=`), `js/${f} (importé par ${m}) manque dans la table d'import de index.html`);
   }
 });
+
+// Relais provisoires de la racine (1.0.1) : un téléphone encore en 1.0.0 retélécharge l'ancienne liste de fichiers.
+// Ils renvoient vers js/ et css/, et ne font pas partie de l'application en cache.
+test('relais de la racine : renvoient vers js/ et css/, absents de APP_FILES', () => {
+  const list = /APP_FILES\s*=\s*\[([^\]]+)\]/.exec(read('version.js'))?.[1] ?? '';
+  for (const f of ['lib.js', 'db.js', 'scan.js']) {
+    assert.match(read(f), new RegExp(`export \\* from '\\./js/${f}'`), `${f} doit ré-exporter js/${f}`);
+    assert.ok(!list.includes(`'${f}'`), `${f} (relais) ne doit pas être dans APP_FILES`);
+  }
+  assert.match(read('app.js'), /import '\.\/js\/app\.js'/);
+  assert.match(read('style.css'), /@import url\('css\/style\.css'\)/);
+  assert.ok(!list.includes("'app.js'") && !list.includes("'style.css'"), 'relais app.js / style.css dans APP_FILES');
+});

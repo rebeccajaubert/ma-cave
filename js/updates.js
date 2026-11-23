@@ -5,7 +5,7 @@ import { $, APP_FILES, APP_VERSION, ask, toast } from './util.js';
 
 // ---------- Mises à jour de l'application ----------
 /** Version publiée sur le site, lue sans aucun cache ; null sans réseau. */
-export async function latestVersion() {
+async function latestVersion() {
   try {
     const res = await fetch(`version.js?v=${Date.now()}`, { cache: 'no-store' });
     return res.ok ? (/APP_VERSION\s*=\s*'([^']+)'/.exec(await res.text())?.[1] || null) : null;
@@ -34,7 +34,7 @@ export async function checkForUpdate({ manual = false } = {}) {
  * l'app reste utilisable hors-ligne. Les fiches (IndexedDB) et les réglages (localStorage) ne sont jamais touchés.
  * @param {string} expected version attendue après la mise à jour (pour confirmer qu'elle a bien pris)
  */
-export async function forceUpdate(expected) {
+async function forceUpdate(expected) {
   $('updateBar').hidden = true; toast('Mise à jour en cours…');
   const results = await Promise.all(APP_FILES.map((f) => fetch(f, { cache: 'reload' }).then((r) => r.ok).catch(() => false)));
   if (results.includes(false)) return toast('Mise à jour impossible : vérifiez la connexion et réessayez');
@@ -64,8 +64,8 @@ navigator.serviceWorker?.addEventListener('message', (e) => {
 // Rouvrir l'app depuis l'icône reprend souvent la page restée en mémoire, sans la recharger : aucune mise à jour
 // n'est alors cherchée. On vérifie donc aussi à chaque retour au premier plan (au plus toutes les 2 minutes).
 // Si une nouvelle version existe, le service worker l'installe puis prévient la page (voir l'écouteur ci-dessus).
-export const UPDATE_CHECK_EVERY = 2 * 60 * 1000;
-export let lastUpdateCheck = Date.now();
+const UPDATE_CHECK_EVERY = 2 * 60 * 1000;
+let lastUpdateCheck = Date.now();
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible' || ['localhost', '127.0.0.1'].includes(location.hostname)) return;
   if (Date.now() - lastUpdateCheck < UPDATE_CHECK_EVERY) return;

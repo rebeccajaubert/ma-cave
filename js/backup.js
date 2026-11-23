@@ -27,7 +27,7 @@ $('importInput').addEventListener('change', async (e) => {
  * Remplace les fiches et le rangement par ceux d'une sauvegarde (fichier ou copie de sécurité).
  * L'état actuel est d'abord copié sur l'appareil : si cette copie échoue, rien n'est remplacé.
  */
-export async function restoreData(d, what) {
+async function restoreData(d, what) {
   const list = (Array.isArray(d.bouteilles) ? d.bouteilles : []).filter((b) => b && !b.vide && isValidId(b.id))
     .map((b) => ({ ...b, ...(b.pile != null ? { pile: Math.max(0, parseInt(b.pile) || 0) } : {}),   // rang : un nombre, jamais du texte
       photo: typeof b.photo === 'string' && b.photo.startsWith('data:image/') ? b.photo : null }));
@@ -51,12 +51,13 @@ export async function restoreData(d, what) {
 }
 
 // ---------- Copies de sécurité (sur l'appareil, avant chaque nouvelle version et avant une restauration) ----------
-export const KEEP_COPIES = 4;                              // plusieurs : la copie d'une version qui aurait abîmé les fiches ne chasse pas la bonne
+const KEEP_COPIES = 4;                              // plusieurs : la copie d'une version qui aurait abîmé les fiches ne chasse pas la bonne
 export const VERSION_KEY = 'cave-version-lancee';         // dernière version lancée sur cet appareil
 export const BACKUP_KEY = 'cave-derniere-sauvegarde';     // date (ms) de la dernière sauvegarde en fichier
 export const REMINDER_KEY = 'cave-dernier-rappel';        // date (ms) du dernier rappel de sauvegarde
 export let copiesInfo = [];                                // résumé des copies gardées (sans les fiches), pour le menu
 export let storageProtected = null;                        // réponse de l'iPhone à « protéger le stockage » (null : inconnue)
+/** Réponse de l'iPhone à « protéger le stockage », affichée dans les réglages. */
 export function setStorageProtected(v) { storageProtected = v; }
 export const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
 export const lsSet = (k, v) => { try { localStorage.setItem(k, v); return true; } catch { return false; } };
@@ -84,7 +85,7 @@ export async function loadCopiesInfo(copies) {
     copiesInfo = (await (copies || await openCopies()).summaries()).sort((a, b) => b.id - a.id);
   } catch (e) { console.error(e); copiesInfo = []; }
 }
-export function copyLabel(c) {
+function copyLabel(c) {
   const d = new Date(c.date), when = `${d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })} à ${d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
   const why = c.raison === 'restauration' ? 'Avant une restauration' : `Avant la version ${c.vers || '?'}`;
   return { why, sub: `${when} · ${c.n} bouteille${c.n > 1 ? 's' : ''}` };

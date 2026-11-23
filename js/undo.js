@@ -5,7 +5,7 @@ import { refresh, reselect, selected } from './sheet.js';
 import { $, toast } from './util.js';
 
 // ---------- Annuler la dernière suppression ----------
-export let undoTimer = null, undoState = null;   // { previous, after, count } : suppressions encore annulables
+let undoTimer = null, undoState = null;   // { previous, after, count } : suppressions encore annulables
 /**
  * Propose « Annuler » pendant 10 secondes après une suppression. Plusieurs suppressions rapprochées
  * s'additionnent : « Annuler » les remet toutes en place.
@@ -27,7 +27,7 @@ export function offerUndoAction(message, run) {
   $('undo').hidden = false; document.body.classList.add('undo-on');
   clearTimeout(undoTimer); undoTimer = setTimeout(hideUndo, 10000);
 }
-export function hideUndo() { clearTimeout(undoTimer); undoState = null; $('undo').hidden = true; document.body.classList.remove('undo-on'); }
+function hideUndo() { clearTimeout(undoTimer); undoState = null; $('undo').hidden = true; document.body.classList.remove('undo-on'); }
 $('undoBtn').onclick = async () => {
   const st = undoState; hideUndo(); if (!st) return;
   if (st.run) { try { await st.run(); } catch (e) { console.error(e); toast('Annulation impossible'); } return; }

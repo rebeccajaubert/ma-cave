@@ -7,7 +7,7 @@ import { $ } from './util.js';
 
 // ---------- Lecture de l'étiquette par photo ----------
 /** Range les champs lus sur l'étiquette dans le formulaire, sans écraser ce que l'utilisateur a déjà saisi. */
-export function applyScan(form, out) {
+function applyScan(form, out) {
   let n = 0;
   for (const k of ['nom', 'millesime', 'appellation', 'region', 'cepage']) {
     const el = form.elements[k]; if (out[k] && !el.value.trim()) { el.value = out[k]; n++; }
@@ -45,11 +45,11 @@ export async function runScan() {
 
 // ---------- Saisie à la voix ----------
 export let voice = null;              // enregistrement en cours : { rec, stream, chunks, timer, started, token, send }
-export const VOICE_MAX_S = 60;        // au-delà, l'enregistrement s'arrête et part tout seul
+const VOICE_MAX_S = 60;        // au-delà, l'enregistrement s'arrête et part tout seul
 // Boutons photo désactivés pendant l'écoute : une photo (ou sa lecture) redessinerait la fiche ou changerait le jeton,
 // et l'enregistrement serait perdu
-export const PHOTO_ACTS = '[data-act=photo], [data-act=scan], [data-act=nophoto]';
-export const listOf = (s) => (s ? s.split(',').filter(Boolean) : []);
+const PHOTO_ACTS = '[data-act=photo], [data-act=scan], [data-act=nophoto]';
+const listOf = (s) => (s ? s.split(',').filter(Boolean) : []);
 export function markHand(form, name) { const h = listOf(form.dataset.hand); if (!h.includes(name)) { h.push(name); form.dataset.hand = h.join(','); } }
 
 /** Zone « J'ai compris » : texte modifiable (secours : dictée du clavier ou saisie) et « Remplir la fiche ». */
@@ -62,7 +62,7 @@ export function showVoiceZone(text, hint = '') {
   const lbl = $('voiceBtn')?.querySelector('.lbl'); if (lbl && text) lbl.textContent = 'Reparler';
 }
 /** Libellé du bouton pendant l'enregistrement, et arrêt automatique au bout d'une minute. */
-export function tickVoice() {
+function tickVoice() {
   if (!voice) return;
   const s = Math.floor((Date.now() - voice.started) / 1000), btn = $('voiceBtn');
   if (s >= VOICE_MAX_S) { stopVoice(true); return; }
@@ -122,13 +122,13 @@ export function stopVoice(send) {
   resetVoiceBtn();
   const st = $('scanStatus'); if (send && st) { st.className = 'scan busy'; st.textContent = 'Envoi de ce que vous avez dit…'; }
 }
-export function resetVoiceBtn() {
+function resetVoiceBtn() {
   $('form')?.querySelectorAll(PHOTO_ACTS).forEach((b) => { b.disabled = false; });
   const btn = $('voiceBtn');
   if (btn) { btn.classList.remove('rec'); btn.querySelector('.ico').textContent = '🎤'; btn.querySelector('.lbl').textContent = $('voiceText')?.value ? 'Reparler' : 'Parler'; }
 }
 /** Message d'erreur de la voix, avec le champ texte pour écrire ou dicter à la place. */
-export function voiceError(msg) {
+function voiceError(msg) {
   const st = $('scanStatus'); if (st) { st.className = 'scan err'; st.textContent = msg; }
   if (!$('voiceText')) showVoiceZone('');
 }

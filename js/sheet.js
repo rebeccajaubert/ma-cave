@@ -28,7 +28,7 @@ export async function onTap(cx, cy) {
   await tapSlot(hit);
 }
 /** Touche sur un emplacement : en mode « copie/déplacement », range la fiche ici ; sinon ouvre l'emplacement. */
-export let slotBusy = false;   // évite qu'un double toucher rapide range la même bouteille à deux endroits
+let slotBusy = false;   // évite qu'un double toucher rapide range la même bouteille à deux endroits
 export async function tapSlot(hit) {
   const id = slotId(hit.key, hit.c, hit.r), inCases = racks[hit.key]?.isCases;
   if (!mode) return inCases ? (hit.id ? selectBottle(hit.id) : showCase(id)) : selectSlot(hit.key, hit.c, hit.r);
@@ -81,7 +81,7 @@ export function selectSlot(key, c, r) {
   if (b) showCard(b); else showUnknown(id);
 }
 /** Bouteille d'une case maçonnée : anneau autour d'elle, elle sort de la pile, sa fiche s'ouvre. */
-export function selectBottle(id) {
+function selectBottle(id) {
   const b = bottleAt(id); if (!b) return;
   const { k, c, r } = parseId(id), pos = racks[k]?.isCases ? bottleLocal(b) : null;
   hideHero();
@@ -102,7 +102,7 @@ export function selectBottle(id) {
  * Fiche « Case » : contenu de la case groupé par vin, places libres, « Ajouter des bouteilles », « Vider cette case ».
  * @param {string[]|null} hl bouteilles à allumer (ligne de liste ou de recherche touchée)
  */
-export function showCase(caseId, hl = null) {
+function showCase(caseId, hl = null) {
   const { k, c, r } = parseId(caseId);
   if (!inRack(k, c, r)) return toast('Cet emplacement n\'existe plus avec les dimensions actuelles');
   hideHero(); selRing.visible = false;
@@ -166,12 +166,12 @@ export function closeSheet() {
 }
 $('sheetClose').onclick = closeSheet;
 
-export function showUnknown(id) {
+function showUnknown(id) {
   openSheet('Bouteille non enregistrée', `<div class="loc">${locText(id)}</div>
     <p class="help">Cet emplacement n'a pas encore de fiche : la bouteille n'a donc pas d'étiquette et n'apparaît pas dans le casier.</p>
     <div class="btns"><button class="btn primary block" data-act="add">Enregistrer cette bouteille</button></div>`);
 }
-export function showCard(b) {
+function showCard(b) {
   const t = typeOf(b), q = qty(b), f = [];
   const add = (k, v) => v && f.push(`<dt>${k}</dt><dd>${esc(v)}</dd>`);
   add('Couleur', t.nom); add('Millésime', b.millesime); add('Appellation', b.appellation); add('Région', b.region);
@@ -197,7 +197,7 @@ export function showCard(b) {
  * Formulaire de fiche. `draft` permet de le réafficher (après une photo, par exemple)
  * sans perdre ce qui a déjà été saisi.
  */
-export function showForm(id, draft = null) {
+function showForm(id, draft = null) {
   scanToken++;
   const { k: fk, u: fu } = parseId(id), inCase = isCasesRack(fk), st = styleOf(fk);
   // Dans une case maçonnée, `id` est soit une bouteille (modification), soit la case (ajout de bouteilles, 1 par défaut)
@@ -262,7 +262,7 @@ export function showForm(id, draft = null) {
   if (b._voice) showVoiceZone(b._voice);
 }
 /** Valeurs actuellement saisies dans le formulaire. */
-export function formDraft() {
+function formDraft() {
   const f = $('form'); if (!f) return null;
   const d = Object.fromEntries(new FormData(f).entries());
   d.couleur = f.querySelector('.chip.on')?.dataset.couleur || 'rouge';
@@ -271,7 +271,7 @@ export function formDraft() {
   return d;
 }
 /** Réaffiche le formulaire en gardant les saisies et la position de défilement. */
-export function redrawForm(d) {
+function redrawForm(d) {
   const scroll = $('sheetBody').scrollTop;
   showForm($('form').dataset.id, { ...d, photo: draftPhoto });
   $('sheetBody').scrollTop = scroll;
@@ -378,7 +378,7 @@ $('sheetBody').addEventListener('click', async (e) => {
   else if (act === 'adjust') {
     const k = e.target.closest('[data-rack]')?.dataset.rack;
     // Fiche, mode copie et résultats fermés avant le réglage (la scène ne touche pas à l'interface)
-    if (racks[k]?.isCases) { if (adjust) endAdjust(false); closeSheet(); endMode(); $('results').hidden = true; startAdjust(k); }
+    if (racks[k]?.isCases) { closeSheet(); endMode(); $('results').hidden = true; startAdjust(k); }   // startAdjust abandonne un réglage déjà en cours
   }
   else if (act === 'rack-tools') { const k = e.target.closest('[data-rack]')?.dataset.rack; if (racks[k]) { showRack(k); showRackTools(k); } }
   else if (act === 'scan-settings') showScanSettings();
@@ -446,7 +446,7 @@ $('sheetBody').addEventListener('submit', async (e) => {
  * Formulaire dans une case maçonnée. Nouvelle saisie (`id` = la case) : N bouteilles en haut de la pile.
  * Modification d'une bouteille : elle seule, ou aussi ses jumelles de la même case si l'utilisateur le veut.
  */
-export async function submitCaseForm(id, d, more) {
+async function submitCaseForm(id, d, more) {
   const wine = wineOf({ ...d, photo: draftPhoto });
   if (!parseId(id).u) {
     const n = qty(d), added = await addToCase(id, wine, n); if (!added) return;
@@ -484,13 +484,13 @@ $('photoInput').addEventListener('change', async (e) => {
 
 // ---------- Modes « j'ai la même ailleurs » (copie) et « déplacer » ----------
 /** Entre dans un mode où chaque touche sur un emplacement libre y range la fiche. */
-export function startMode(type, b) {
+function startMode(type, b) {
   if (!b) return;
   mode = { type, source: { ...b }, added: 0 };
   $('bannerQty').hidden = type !== 'copy';
   updateBanner(); $('banner').hidden = false; closeSheet();
 }
-export function updateBanner() {
+function updateBanner() {
   if (!mode) return;
   const nom = mode.source.nom || 'cette bouteille';
   $('bannerText').textContent = mode.type === 'copy'
@@ -498,7 +498,7 @@ export function updateBanner() {
     : `Touchez le nouvel emplacement de « ${nom} »`;
   $('bannerQtyVal').textContent = qty(mode.source);
 }
-export function endMode() { mode = null; $('banner').hidden = true; }
+function endMode() { mode = null; $('banner').hidden = true; }
 $('bannerDone').onclick = endMode;
 // Nombre de bouteilles rangées à chaque emplacement touché (mode copie)
 $('banner').addEventListener('click', (e) => {

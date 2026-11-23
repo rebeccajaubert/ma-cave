@@ -14,7 +14,7 @@ import { $, APP_VERSION, ask, toast } from './util.js';
 // ---------- Menu ----------
 $('menuBtn').onclick = showMenu;
 /** Pictogrammes au trait du menu (SVG en ligne : rien à charger, couleur héritée du texte). */
-export const ICONS = {
+const ICONS = {
   bottle: 'M10 2h4v5l2 3v12H8V10l2-3z', glass: 'M7 3h10l-1 6a4 4 0 0 1-8 0zM12 13v7M8 21h8', grid: 'M4 4h16v16H4zM4 12h16M12 4v16',
   shield: 'M12 3l8 3v6c0 5-4 8-8 9-4-1-8-4-8-9V6z', help: 'M12 21a9 9 0 1 0 0-18a9 9 0 1 0 0 18zM9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.7M12 17h.01',
   sliders: 'M4 7h9M17 7h3M4 17h3M11 17h9M15 5v4M9 15v4',
@@ -23,7 +23,7 @@ export const ICONS = {
   flask: 'M9 3h6M10 3v6l-5 10h14l-5-10V3',
 };
 /** Une ligne du menu sombre ; `sub` (HTML déjà échappé) s'affiche en petit sous le libellé. */
-export function caveRow(act, icon, label, sub = '') {
+function caveRow(act, icon, label, sub = '') {
   return `<button class="crow" data-act="${act}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${ICONS[icon] || ''}"/></svg>`
     + `<span class="crow-t">${label}${sub ? `<small>${sub}</small>` : ''}</span><span class="crow-c" aria-hidden="true">›</span></button>`;
 }
@@ -99,14 +99,14 @@ export function showConfig(focus = null) {
   $('cfgFocus')?.scrollIntoView({ block: 'start' });
 }
 /** « Longueur ≈ 3,6 m · hauteur ≈ 1,9 m » pour un casier. */
-export function sizeText(style, cols, rows, k = null) {
+function sizeText(style, cols, rows, k = null) {
   // Cases maçonnées déjà réglées à la main : la taille tient compte des séparations déplacées
   const g = k && style === 'cases' && rk[k].style === 'cases' ? rackGrid({ ...rk[k], cols, rows }) : null;
   const { length, height } = g ? { length: g.W, height: g.H } : rackSize(style, cols, rows);
   return `Longueur ≈ ${meters(length)} · hauteur ≈ ${meters(height)}`;
 }
 /** Met à jour la taille affichée d'un casier pendant le réglage. */
-export function updateSize(box) {
+function updateSize(box) {
   const k = box.dataset.rack, v = (f) => box.querySelector(`[name="${k}_${f}"]`).value, style = v('style'), lim = rackLimits(k, style);
   // Taille bornée aux maximums du type : c'est ce qui sera réellement appliqué.
   box.querySelector('[data-size]').textContent = sizeText(style, clamp(parseInt(v('cols')) || 0, 0, lim.cols), clamp(parseInt(v('rows')) || 0, 0, lim.rows), k);

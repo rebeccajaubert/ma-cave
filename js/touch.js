@@ -6,7 +6,7 @@ import { onTap } from './sheet.js';
 import { $ } from './util.js';
 
 // ---------- Toucher : tourner, faire défiler, sélectionner ----------
-export const pointers = new Map(); export let tapStart = null, pinchDist = 0;
+const pointers = new Map(); let tapStart = null, pinchDist = 0;
 canvas.addEventListener('pointerdown', (e) => {
   canvas.setPointerCapture(e.pointerId);
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -38,7 +38,7 @@ canvas.addEventListener('pointermove', (e) => {
     zoomBy(pinchDist / Math.max(d, 1)); pinchDist = d;
   }
 });
-export function endPointer(e) {
+function endPointer(e) {
   const had = pointers.delete(e.pointerId);
   if (adjust) { adjust.drag = null; tapStart = null; return; }   // en réglage, un toucher n'ouvre rien
   if (had && tapStart && pointers.size === 0 && e.type === 'pointerup' && performance.now() - tapStart.t < 500) onTap(e.clientX, e.clientY);
@@ -47,7 +47,7 @@ export function endPointer(e) {
 canvas.addEventListener('pointerup', endPointer);
 canvas.addEventListener('pointercancel', endPointer);
 canvas.addEventListener('wheel', (e) => { e.preventDefault(); zoomBy(Math.exp(e.deltaY * 0.0015)); }, { passive: false });
-export function zoomBy(f) { if (view.mode === 'overview') view.zoom *= f; else view.d *= f; clampView(); }
+function zoomBy(f) { if (view.mode === 'overview') view.zoom *= f; else view.d *= f; clampView(); }
 export function pick(cx, cy) {
   ndc.set((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1);
   raycaster.setFromCamera(ndc, camera);

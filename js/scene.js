@@ -6,42 +6,42 @@ import { $, toast } from './util.js';
 
 // ---------- Géométrie de la cave (mètres, schématique) ----------
 export const BASE = 0.12;        // socle sous les casiers
-export const R = 2.6;            // rayon de la voûte (demi-largeur de la cave)
-export const RACK_D = 0.4;       // profondeur des casiers muraux
-export const ISLAND_W = 1.0;     // largeur de l'îlot central : deux meubles de RACK_D dos à dos, avec un petit passage entre eux
-export const RACK_FRONT_X = R - RACK_D;
+const R = 2.6;            // rayon de la voûte (demi-largeur de la cave)
+const RACK_D = 0.4;       // profondeur des casiers muraux
+const ISLAND_W = 1.0;     // largeur de l'îlot central : deux meubles de RACK_D dos à dos, avec un petit passage entre eux
+const RACK_FRONT_X = R - RACK_D;
 
 export const rk = rackSizes(config);
 /** Pour chaque casier : taille d'un emplacement (cw × ch) et du casier entier (W × H), selon son type de rangement. */
 // cw × ch : taille nominale d'un emplacement (sert au zoom) ; W × H : taille réelle, les cases maçonnées pouvant
 // avoir des colonnes et des rangées de tailles différentes (séparations réglées à la main).
-export const dims = Object.fromEntries(RACK_ORDER.map((k) => {
+const dims = Object.fromEntries(RACK_ORDER.map((k) => {
   const st = STYLES[rk[k].style], grid = rackGrid(rk[k]);
   return [k, { cw: st.w, ch: st.h, W: grid.W, H: grid.H, grid }];
 }));
-export const islandLen = Math.max(dims.IG.W, dims.ID.W) + 0.2;
-export const outerLen = Math.max(dims.G.W, dims.D.W);
-export const L = Math.max(outerLen + 1.2, islandLen + 2.8);
+const islandLen = Math.max(dims.IG.W, dims.ID.W) + 0.2;
+const outerLen = Math.max(dims.G.W, dims.D.W);
+const L = Math.max(outerLen + 1.2, islandLen + 2.8);
 // Petit mur droit sous la voûte : rehaussé si les casiers muraux sont hauts, pour qu'ils restent sous la voûte.
-export const WALL_H = Math.max(0.3, BASE + Math.max(dims.G.H, dims.D.H) + 0.1 - Math.sqrt(R * R - RACK_FRONT_X * RACK_FRONT_X));
+const WALL_H = Math.max(0.3, BASE + Math.max(dims.G.H, dims.D.H) + 0.1 - Math.sqrt(R * R - RACK_FRONT_X * RACK_FRONT_X));
 
 // ---------- Palette « plan d'architecte » ----------
-export const C = { fond: 0x0f2a4d, trait: 0x9cc4ee, casier: 0xc9d6e6, arete: 0x24456f, sel: 0x0b1f3a, trouve: 0xff7a00 };
+const C = { fond: 0x0f2a4d, trait: 0x9cc4ee, casier: 0xc9d6e6, arete: 0x24456f, sel: 0x0b1f3a, trouve: 0xff7a00 };
 
 // ---------- Rendu ----------
 export const canvas = $('scene');
-export const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
-export const scene = new THREE.Scene();
+const scene = new THREE.Scene();
 scene.background = new THREE.Color(C.fond);
 export const VFOV = 38, TAN_V = Math.tan(THREE.MathUtils.degToRad(VFOV / 2));
 export const camera = new THREE.PerspectiveCamera(VFOV, 1, 0.1, 300);
 scene.add(camera);
 scene.add(new THREE.AmbientLight(0xffffff, 1.1));
-export const camLight = new THREE.PointLight(0xffffff, 2.4, 0, 0); camLight.position.set(1.2, 1.6, 0.6); camera.add(camLight);
-export let aspect = 1;
-export function resize() {
+const camLight = new THREE.PointLight(0xffffff, 2.4, 0, 0); camLight.position.set(1.2, 1.6, 0.6); camera.add(camLight);
+let aspect = 1;
+function resize() {
   const w = window.innerWidth, h = window.innerHeight;
   renderer.setSize(w, h, false); aspect = w / h;
   camera.aspect = aspect; camera.updateProjectionMatrix();
@@ -49,7 +49,7 @@ export function resize() {
 window.addEventListener('resize', resize);
 resize();
 
-export function canvasTex(w, h, draw, repeat = false) {
+function canvasTex(w, h, draw, repeat = false) {
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   draw(c.getContext('2d'), w, h);
   const t = new THREE.CanvasTexture(c);
@@ -63,7 +63,7 @@ export function canvasTex(w, h, draw, repeat = false) {
 export const raycaster = new THREE.Raycaster(), ndc = new THREE.Vector2();
 
 // ---------- Sol, voûte en traits, repères ----------
-export const decor = new THREE.Group(); scene.add(decor);   // masqué quand on regarde un casier de face
+const decor = new THREE.Group(); scene.add(decor);   // masqué quand on regarde un casier de face
 {
   const grid = canvasTex(128, 128, (g, w, h) => {
     g.fillStyle = '#163a66'; g.fillRect(0, 0, w, h);
@@ -101,7 +101,7 @@ export const decor = new THREE.Group(); scene.add(decor);   // masqué quand on 
 export const racks = {};   // clé -> { group, plane, body, cols, rows, flip, W, H, discs, rings, normal, label }
 export const tmpM = new THREE.Matrix4(), tmpC = new THREE.Color(), tmpV = new THREE.Vector3();
 /** Dessin d'un emplacement vide, par type de rangement (vu de face, depuis l'allée). */
-export const CELL_DRAW = {
+const CELL_DRAW = {
   alveoles(g, w, h) {
     g.fillStyle = '#eef3f9'; g.fillRect(0, 0, w, h);
     g.strokeStyle = '#c2d0e2'; g.lineWidth = 3; g.strokeRect(0, 0, w, h);
@@ -135,9 +135,9 @@ export const CELL_DRAW = {
     g.beginPath(); g.moveTo(0, h * 0.5); g.lineTo(w * 0.06, h * 0.5); g.moveTo(w * 0.94, h * 0.5); g.lineTo(w, h * 0.5); g.stroke();
   },
 };
-export const cellTexCache = {};
+const cellTexCache = {};
 /** Texture d'un emplacement à la bonne proportion (largeur × hauteur du type de rangement). */
-export function cellTexture(style) {
+function cellTexture(style) {
   if (!cellTexCache[style]) {
     const st = STYLES[style], W = 256, H = Math.round(256 * st.h / st.w);
     cellTexCache[style] = canvasTex(W, H, CELL_DRAW[style] || CELL_DRAW.alveoles, true);
@@ -158,16 +158,16 @@ export function cellTexture(style) {
 }
 // Chaque bouteille enregistrée est couchée dans son emplacement : on voit son culot dépasser du casier.
 export const BOTTLE_OUT = 0.07;
-export const glassGeo = new THREE.LatheGeometry([[0.0745, -0.07], [0.0745, BOTTLE_OUT - 0.02], [0.073, BOTTLE_OUT - 0.009], [0.068, BOTTLE_OUT - 0.002], [0.06, BOTTLE_OUT],
+const glassGeo = new THREE.LatheGeometry([[0.0745, -0.07], [0.0745, BOTTLE_OUT - 0.02], [0.073, BOTTLE_OUT - 0.009], [0.068, BOTTLE_OUT - 0.002], [0.06, BOTTLE_OUT],
   [0.052, BOTTLE_OUT - 0.003], [0.044, BOTTLE_OUT - 0.012], [0.03, BOTTLE_OUT - 0.03], [0.014, BOTTLE_OUT - 0.042], [0, BOTTLE_OUT - 0.046]].map(([r, y]) => new THREE.Vector2(r, y)), 36).rotateX(Math.PI / 2);
-export const glassMat = new THREE.MeshStandardMaterial({ roughness: 0.1, metalness: 0, envMapIntensity: 1.5 });
+const glassMat = new THREE.MeshStandardMaterial({ roughness: 0.1, metalness: 0, envMapIntensity: 1.5 });
 
 // Disposition des bouteilles dans un emplacement : cellLayout() dans lib.js.
-export const ringGeo = new THREE.RingGeometry(0.08, 0.099, 32);
-export const ringMat = new THREE.MeshBasicMaterial({ color: C.trouve, transparent: true, depthTest: false });
-export const edgeMat = new THREE.LineBasicMaterial({ color: C.arete });
-export function withEdges(mesh) { mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry), edgeMat)); return mesh; }
-export function makeLabel(text, key) {
+const ringGeo = new THREE.RingGeometry(0.08, 0.099, 32);
+const ringMat = new THREE.MeshBasicMaterial({ color: C.trouve, transparent: true, depthTest: false });
+const edgeMat = new THREE.LineBasicMaterial({ color: C.arete });
+function withEdges(mesh) { mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry), edgeMat)); return mesh; }
+function makeLabel(text, key) {
   const tex = canvasTex(512, 128, (g, w, h) => {
     g.fillStyle = '#ffffff'; g.beginPath(); if (g.roundRect) g.roundRect(4, 14, w - 8, h - 28, 50); else g.rect(4, 14, w - 8, h - 28); g.fill();   // roundRect : Safari 16+
     g.fillStyle = '#10294a'; g.textAlign = 'center'; g.textBaseline = 'middle';
@@ -176,7 +176,7 @@ export function makeLabel(text, key) {
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
   s.scale.set(1.5, 0.375, 1); s.renderOrder = 10; s.userData.rack = key; decor.add(s); return s;
 }
-export function makeRack(key, x, rotY, flip, hasBody, labelText) {
+function makeRack(key, x, rotY, flip, hasBody, labelText) {
   const { cols, rows, style } = rk[key], { cw, ch, W, H, grid } = dims[key], layout = cellLayout(style), isCases = style === 'cases';
   const group = new THREE.Group(); group.position.set(x, 0, 0); group.rotation.y = rotY; scene.add(group);
   let plane;
@@ -202,14 +202,14 @@ export function makeRack(key, x, rotY, flip, hasBody, labelText) {
   buildFacade(racks[key]);
 }
 /** Places (ordre de la pile) de chaque case d'un casier en cases maçonnées : rack.places[c][r]. */
-export function computePlaces(rack) {
+function computePlaces(rack) {
   rack.places = rack.isCases ? rack.grid.colW.map((w) => rack.grid.rowH.map((h) => casePlaces(w, h))) : [];
 }
 /**
  * (Re)construit la façade d'un casier en cases maçonnées (cases et séparations) et les pastilles des bouteilles.
  * Appelée à la création et après chaque déplacement d'une séparation (la taille totale ne change pas).
  */
-export function buildFacade(rack) {
+function buildFacade(rack) {
   const { group, cols, rows, layout } = rack;
   // Ne libérer que ce qui appartient à ce casier : les géométries de bouteille et d'anneau sont partagées
   if (rack.facade) { group.remove(rack.facade); rack.facade.traverse((o) => o.geometry?.dispose()); }
@@ -244,11 +244,11 @@ export function buildFacade(rack) {
   for (const m of [rack.glass, rack.rings]) { m.count = 0; m.frustumCulled = false; group.add(m); }
   rack.rings.renderOrder = 5;
 }
-export const SEP_W = 0.025;   // épaisseur dessinée d'une séparation entre deux cases
-export const sepMat = new THREE.MeshBasicMaterial({ color: 0x1f2630 });
+const SEP_W = 0.025;   // épaisseur dessinée d'une séparation entre deux cases
+const sepMat = new THREE.MeshBasicMaterial({ color: 0x1f2630 });
 // Réglage des séparations en cours (déclaré ici : les casiers sont construits avant la section « Ajuster »)
 export let adjust = null;   // { k, before: { colW, rowH }, sel: { axis, i } | null, drag: { from, sizes } | null }
-export const sepHlMat = new THREE.MeshBasicMaterial({ color: C.trouve });   // séparation choisie (orange)
+const sepHlMat = new THREE.MeshBasicMaterial({ color: C.trouve });   // séparation choisie (orange)
 /** Séparations épaissies pendant « Ajuster les séparations », celle qui est choisie en orange. */
 export function paintSeps(rack) {
   const on = adjust?.k === rack.key;
@@ -258,8 +258,8 @@ export function paintSeps(rack) {
     m.scale.set(axis === 'col' && on ? 2.4 : 1, axis === 'row' && on ? 2.4 : 1, 1);
   }
 }
-export const caseMatCache = new Map();
-export function caseMat(tex) { if (!caseMatCache.has(tex)) caseMatCache.set(tex, new THREE.MeshBasicMaterial({ map: tex })); return caseMatCache.get(tex); }
+const caseMatCache = new Map();
+function caseMat(tex) { if (!caseMatCache.has(tex)) caseMatCache.set(tex, new THREE.MeshBasicMaterial({ map: tex })); return caseMatCache.get(tex); }
 /**
  * Centre et taille d'une case dans le repère du casier : [cx, cy, largeur, hauteur].
  * Colonne 0 = la plus proche de l'entrée (à droite du casier quand il est « retourné »).
@@ -277,7 +277,7 @@ export function bottleLocal(rec) {
   const [cx, cy] = caseLocal(rack, c, r);
   return [cx + p[0], cy + p[1]];   // x positif = à droite vu depuis l'allée, comme le repère du casier
 }
-export function slotLocal(rack, c, r) { const [x, y] = caseLocal(rack, c, r); return [x, y]; }
+function slotLocal(rack, c, r) { const [x, y] = caseLocal(rack, c, r); return [x, y]; }
 export function slotWorld(key, c, r, out = new THREE.Vector3()) {
   const rack = racks[key]; const [lx, ly] = slotLocal(rack, c, r);
   return rack.group.localToWorld(out.set(lx, ly, 0));
@@ -293,8 +293,8 @@ makeRack('IG', -ISLAND_W / 2, -Math.PI / 2, true, true, 'Îlot gauche');
 makeRack('ID', ISLAND_W / 2, Math.PI / 2, false, true, 'Îlot droit');
 
 // ---------- Pastilles des bouteilles ----------
-export let hiddenId = null;     // bouteille « sortie » (présentée en gros plan)
-export const tmpP = new THREE.Vector3(), tmpS = new THREE.Vector3(), IDQ = new THREE.Quaternion();
+let hiddenId = null;     // bouteille « sortie » (présentée en gros plan)
+const tmpP = new THREE.Vector3(), tmpS = new THREE.Vector3(), IDQ = new THREE.Quaternion();
 /** Redessine les bouteilles enregistrées dans les casiers (plusieurs par emplacement selon la quantité et le type de rangement). */
 export function rebuildBottles() {
   for (const k of RACK_ORDER) {
@@ -325,8 +325,9 @@ export let highlighted = [];    // identifiants mis en évidence par la recherch
 export let picked = false;      // un résultat de recherche a été choisi : un enregistrement ne rallume pas toute la recherche
 /** Bouteilles à entourer d'orange (recherche, ligne de liste touchée) ; redessine les anneaux. */
 export function setHighlight(ids) { highlighted = ids; rebuildRings(); }
+/** Un résultat de recherche a été choisi (true) : un enregistrement ne rallume plus toute la recherche. */
 export function setPicked(v) { picked = v; }
-export function rebuildRings() {
+function rebuildRings() {
   const count = {}; for (const k of RACK_ORDER) count[k] = 0;
   for (const id of highlighted) {
     const { k, c, r, u } = parseId(id); if (!inRack(k, c, r)) continue;
@@ -344,15 +345,15 @@ selRing.visible = false; selRing.renderOrder = 6; scene.add(selRing);
 
 // ---------- Caméra : vue d'ensemble ou casier de face ----------
 export const view = { mode: 'overview', key: null, az: 0.42, el: 0.9, zoom: 1, u: 0, v: 0, d: 5 };
-export const cam = { pos: new THREE.Vector3(), tgt: new THREE.Vector3(), ready: false };
-export const goalPos = new THREE.Vector3(), goalTgt = new THREE.Vector3();
-export const tanH = () => TAN_V * aspect;
-export const fitDist = () => (Math.hypot(R, L / 2) + 0.4) / (TAN_V * Math.min(1, aspect)) * (aspect > 1 ? 1.25 : 0.8);
+const cam = { pos: new THREE.Vector3(), tgt: new THREE.Vector3(), ready: false };
+const goalPos = new THREE.Vector3(), goalTgt = new THREE.Vector3();
+const tanH = () => TAN_V * aspect;
+const fitDist = () => (Math.hypot(R, L / 2) + 0.4) / (TAN_V * Math.min(1, aspect)) * (aspect > 1 ? 1.25 : 0.8);
 export const dFor = (width) => (width + 0.35) / 2 / tanH();                       // distance pour voir `width` mètres de casier
 // Partie de l'écran réellement libre pour la maquette : sous la barre de recherche, au-dessus de l'aide,
 // et de la barre du bas (mesurée sur la page, donc juste sur tous les iPhone).
-export let freeArea = { top: 0, bottom: 0 };
-export function measureFreeArea() {
+let freeArea = { top: 0, bottom: 0 };
+function measureFreeArea() {
   const h = window.innerHeight, top = $('topbar').getBoundingClientRect().bottom + 8;
   // (offsetParent est toujours nul pour un élément « fixed » : on teste la présence à l'écran avec getClientRects)
   const lows = ['nav', 'hint'].map((id) => $(id)).filter((el) => el && !el.hidden && el.getClientRects().length && el.textContent.trim())
@@ -360,9 +361,9 @@ export function measureFreeArea() {
   freeArea = { top, bottom: h - (lows.length ? Math.min(...lows) - 8 : h) };
 }
 /** Part de la hauteur de l'écran où la maquette est visible (le reste est couvert par les boutons). */
-export const usableRatio = () => clamp((window.innerHeight - freeArea.top - freeArea.bottom) / window.innerHeight, 0.4, 1);
+const usableRatio = () => clamp((window.innerHeight - freeArea.top - freeArea.bottom) / window.innerHeight, 0.4, 1);
 /** En vue casier, recentre l'image dans la partie libre de l'écran, pour que rien ne soit caché sous les boutons. */
-export function applyViewOffset() {
+function applyViewOffset() {
   measureFreeArea();
   const w = window.innerWidth, h = window.innerHeight, shift = view.mode === 'rack' ? (freeArea.bottom - freeArea.top) / 2 : 0;
   if (shift) camera.setViewOffset(w, h, 0, shift, w, h); else camera.clearViewOffset();
@@ -370,7 +371,7 @@ export function applyViewOffset() {
 window.addEventListener('resize', () => { applyViewOffset(); clampView(); });   // rotation : la partie libre change
 export const dMax = (rack) => Math.max(dFor(rack.W), (rack.H + 0.5) / 2 / TAN_V / usableRatio());   // tout le casier, dans la partie libre
 // Zoom maximal : une case maçonnée peut remplir l'écran ; une place de casier métallique fait ≈ 55 px
-export const dMin = (rack) => (rack.isCases ? 0.3 / 2 / tanH() : dFor(Math.max(0.25, 1.3 * rack.cw)));
+const dMin = (rack) => (rack.isCases ? 0.3 / 2 / tanH() : dFor(Math.max(0.25, 1.3 * rack.cw)));
 // Largeur montrée à l'ouverture d'un casier : assez d'emplacements pour se repérer, assez grands pour être touchés du doigt.
 export const viewW = (rack) => clamp(6 * rack.cw, 0.54, 1.4);
 export function clampView() {
@@ -381,7 +382,7 @@ export function clampView() {
   view.u = clamp(view.u, -maxU, maxU);
   view.v = clamp(view.v, -view.d * TAN_V, BASE + rack.H);
 }
-export function computeGoal() {
+function computeGoal() {
   if (view.mode === 'overview') {
     const d = fitDist() * view.zoom;
     goalTgt.set(0, 0.9, 0);
@@ -438,7 +439,7 @@ export function focusSlot(key, c, r) {
   view.u = lx; view.v = ly - 0.44 * view.d * TAN_V;   // l'emplacement apparaît dans le haut de l'écran, au-dessus de la fiche
   clampView();
 }
-export function updateCamera(dt) {
+function updateCamera(dt) {
   computeGoal();
   if (!cam.ready) { cam.pos.copy(goalPos); cam.tgt.copy(goalTgt); cam.ready = true; }
   const k = 1 - Math.exp(-dt * 7);
@@ -448,11 +449,11 @@ export function updateCamera(dt) {
 
 // ---------- La bouteille présentée en gros plan ----------
 export const hero = new THREE.Group(); hero.visible = false; scene.add(hero);
-export const heroGlassMat = new THREE.MeshPhysicalMaterial({ color: 0x14220e, roughness: 0.06, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.04, envMapIntensity: 1.6 });
-export const heroCapMat = new THREE.MeshStandardMaterial({ color: 0x6e1020, roughness: 0.34, metalness: 0.75, envMapIntensity: 1.2 });
-export const labelCanvas = document.createElement('canvas'); labelCanvas.width = 512; labelCanvas.height = 512;
-export const labelTex = new THREE.CanvasTexture(labelCanvas); labelTex.colorSpace = THREE.SRGBColorSpace;
-export let heroLabel;
+const heroGlassMat = new THREE.MeshPhysicalMaterial({ color: 0x14220e, roughness: 0.06, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.04, envMapIntensity: 1.6 });
+const heroCapMat = new THREE.MeshStandardMaterial({ color: 0x6e1020, roughness: 0.34, metalness: 0.75, envMapIntensity: 1.2 });
+const labelCanvas = document.createElement('canvas'); labelCanvas.width = 512; labelCanvas.height = 512;
+const labelTex = new THREE.CanvasTexture(labelCanvas); labelTex.colorSpace = THREE.SRGBColorSpace;
+let heroLabel;
 {
   const lathe = (pts, seg) => new THREE.LatheGeometry(pts.map(([r, y]) => new THREE.Vector2(r, y - 0.15)), seg);
   // Profil d'une bouteille bordelaise : piqûre au fond, épaules marquées, bague au goulot
@@ -462,12 +463,12 @@ export let heroLabel;
   heroLabel = new THREE.Mesh(new THREE.CylinderGeometry(0.0379, 0.0379, 0.088, 64, 1, true, -1.3, 2.6), new THREE.MeshStandardMaterial({ map: labelTex, roughness: 0.9, metalness: 0, envMapIntensity: 0.35 }));
   heroLabel.position.y = -0.058; hero.add(heroLabel);
 }
-export function wrapText(g, text, maxW) {
+function wrapText(g, text, maxW) {
   const words = String(text).split(/\s+/), lines = []; let cur = '';
   for (const w of words) { const t = cur ? cur + ' ' + w : w; if (g.measureText(t).width > maxW && cur) { lines.push(cur); cur = w; } else cur = t; }
   if (cur) lines.push(cur); return lines;
 }
-export function drawLabel(b) {
+function drawLabel(b) {
   const g = labelCanvas.getContext('2d'), w = 512, h = 512;
   g.fillStyle = '#f7f1e1'; g.fillRect(0, 0, w, h);
   if (b.photo) {
@@ -509,9 +510,9 @@ export function presentBottle(b, key, c, r) {
   hiddenId = id; rebuildBottles();
 }
 export function hideHero() { hero.visible = false; heroAnim = null; if (hiddenId) { hiddenId = null; rebuildBottles(); } }
-export const ease = (x) => x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2;
-export const qSpin = new THREE.Quaternion(), qTmp = new THREE.Quaternion(), Y = new THREE.Vector3(0, 1, 0);
-export function updateHero(now) {
+const ease = (x) => x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2;
+const qSpin = new THREE.Quaternion(), qTmp = new THREE.Quaternion(), Y = new THREE.Vector3(0, 1, 0);
+function updateHero(now) {
   if (!heroAnim) return;
   const a = heroAnim, t = (now - a.t0) / 1000, u = ease(clamp((t - 0.15) / 1.0, 0, 1));
   hero.position.lerpVectors(a.p0, a.p1, u);
@@ -534,11 +535,11 @@ export function startAdjust(k) {
   document.body.classList.add('adjusting'); $('adjustBar').hidden = false; adjustText();
   paintSeps(racks[k]);
 }
-export function adjustText(extra = '') {
+function adjustText(extra = '') {
   $('adjustText').textContent = extra || 'Touchez une séparation entre deux cases, puis faites-la glisser.';
 }
 /** Redessine le casier après un changement de tailles (la taille totale ne change pas). */
-export function rebuildRack(k) {
+function rebuildRack(k) {
   const rack = racks[k]; rack.grid = rackGrid(rk[k]);
   buildFacade(rack); rebuildBottles(); rebuildRings();
 }
@@ -577,7 +578,7 @@ export function sepAt(k, l) {
   return best;
 }
 /** Une case garde-t-elle assez de places pour ses bouteilles avec cette taille ? (butée des séparations) */
-export function sizeAccepted(k, axis, index, size) {
+function sizeAccepted(k, axis, index, size) {
   const { colW, rowH } = rk[k], n = axis === 'col' ? rowH.length : colW.length;
   for (let j = 0; j < n; j++) {
     const [c, r] = axis === 'col' ? [index, j] : [j, index];
@@ -586,7 +587,7 @@ export function sizeAccepted(k, axis, index, size) {
   }
   return true;
 }
-export const cmText = (m) => `${Math.round(m * 100)} cm`;
+const cmText = (m) => `${Math.round(m * 100)} cm`;
 export function dragSeparator(l) {
   const { k, sel, drag } = adjust, rack = racks[k];
   // Déplacement mesuré depuis l'entrée (colonnes) ou depuis le bas (étagères)

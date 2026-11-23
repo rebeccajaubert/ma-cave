@@ -5,7 +5,7 @@ import { DEV, allBottles, persist, persistBatch, records } from './data.js';
 import { racks } from './scene.js';
 
 // ---------- Bouteilles d'exemple (uniquement pour tester) ----------
-export const DEMO = [
+const DEMO = [
   ['Château Margaux', 'Margaux', 'Bordeaux', 'rouge'], ['Château Lynch-Bages', 'Pauillac', 'Bordeaux', 'rouge'], ['Domaine Tempier', 'Bandol', 'Provence', 'rose'],
   ['Clos des Papes', 'Châteauneuf-du-Pape', 'Rhône', 'rouge'], ['Domaine Leflaive', 'Puligny-Montrachet', 'Bourgogne', 'blanc'], ['William Fèvre', 'Chablis Grand Cru', 'Bourgogne', 'blanc'],
   ['Bollinger', 'Champagne', 'Champagne', 'bulles'], ['Château d\'Yquem', 'Sauternes', 'Bordeaux', 'liquoreux'], ['Domaine Huet', 'Vouvray', 'Loire', 'blanc'],

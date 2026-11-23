@@ -8,7 +8,7 @@ import { closeSheet, goTo, newScanToken } from './sheet.js';
 import { $ } from './util.js';
 
 // ---------- Recherche ----------
-export function haystack(b) { return norm([b.nom, b.millesime, b.appellation, b.region, b.cepage, typeOf(b).nom, b.commentaire].join(' ')); }
+function haystack(b) { return norm([b.nom, b.millesime, b.appellation, b.region, b.cepage, typeOf(b).nom, b.commentaire].join(' ')); }
 export function sortBottles(a, b) { return norm(a.nom).localeCompare(norm(b.nom)) || String(a.millesime).localeCompare(String(b.millesime)) || a.id.localeCompare(b.id); }
 /** Regroupe en une ligne (« × 6 ») les bouteilles identiques (même vin, même millésime) d'une même case maçonnée. */
 export function groupRows(list) {
@@ -21,7 +21,7 @@ export function groupRows(list) {
   return out;
 }
 /** Emplacement qui n'existe plus avec les dimensions actuelles (casier réduit) : la fiche est gardée, mais pas dessinée. */
-export function outOfLayout(id) { const { k, c, r } = parseId(id); return !inRack(k, c, r); }
+function outOfLayout(id) { const { k, c, r } = parseId(id); return !inRack(k, c, r); }
 export function rowHtml({ b, ids, n }) {
   return `<button class="row" data-goto="${b.id}" data-ids="${ids.join(',')}"><span class="dot" style="background:${typeOf(b).css}"></span>
     <span class="main"><div class="n">${esc(b.nom || 'Sans nom')}</div><div class="s">${esc(b.appellation ? b.appellation + ' — ' : '')}${esc(locShort(b.id))}${b.aRanger ? ' · <b>à ranger</b>' : ''}${outOfLayout(b.id) ? ' · <b>hors du rangement actuel</b>' : ''}</div></span>
