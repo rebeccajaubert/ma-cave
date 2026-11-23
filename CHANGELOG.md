@@ -11,6 +11,7 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), ver
 - « Annuler » après « Les ranger dans cette case » (fiches « à ranger ») : les bouteilles rangées repartent et l'ancienne fiche revient. Refusé, sans rien toucher, si une de ces bouteilles a été modifiée, bue ou déplacée entre-temps.
 
 ### Modifié
+- Boutons ☰ (menu) et ✕ (fermer) redessinés et bien centrés ; le ✕ est un peu plus grand (44 px) et le titre des fiches s'aligne sur lui.
 - « Mettre à jour » n'est plus en haut du menu : il est dans Réglages (« Mettre à jour l'application », avec la version installée). Le bandeau vert annonce toujours une nouvelle version au lancement.
 
 ### Corrigé
