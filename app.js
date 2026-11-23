@@ -1328,7 +1328,8 @@ $('sheetBody').addEventListener('click', async (e) => {
     const recs = put.filter((b) => b.id !== lost.id), q = qty(lost), n = recs.length;
     refresh(); showCase(caseId, recs.map((b) => b.id)); saved(n < q ? `${n} rangées, ${q - n} encore à ranger` : `${n} bouteille${n > 1 ? 's rangées' : ' rangée'}`);
     offerUndoAction(n > 1 ? 'Bouteilles rangées' : 'Bouteille rangée', async () => {
-      const u = undoPlaceLost(allBottles(), lost, recs.map((b) => b.id));   // celles encore là ; la pile est retassée
+      const u = undoPlaceLost([...records.values()], lost, { put, remove });   // null si quelque chose a changé depuis
+      if (!u) return toast('Annulation impossible : ces bouteilles ont été modifiées depuis');
       if (!await persistBatch(u.put, u.remove)) return;
       refresh(); if (selected?.caseId === caseId) showCase(caseId); saved('Annulé : bouteilles remises « à ranger »');
     });
@@ -1502,7 +1503,7 @@ function groupRows(list) {
 function outOfLayout(id) { const { k, c, r } = parseId(id); return !inRack(k, c, r); }
 function rowHtml({ b, ids, n }) {
   return `<button class="row" data-goto="${b.id}" data-ids="${ids.join(',')}"><span class="dot" style="background:${typeOf(b).css}"></span>
-    <span class="main"><div class="n">${esc(b.nom || 'Sans nom')}</div><div class="s">${esc(b.appellation ? b.appellation + ' — ' : '')}${locShort(b.id)}${b.aRanger ? ' · <b>à ranger</b>' : ''}${outOfLayout(b.id) ? ' · <b>hors du rangement actuel</b>' : ''}</div></span>
+    <span class="main"><div class="n">${esc(b.nom || 'Sans nom')}</div><div class="s">${esc(b.appellation ? b.appellation + ' — ' : '')}${esc(locShort(b.id))}${b.aRanger ? ' · <b>à ranger</b>' : ''}${outOfLayout(b.id) ? ' · <b>hors du rangement actuel</b>' : ''}</div></span>
     <span class="y">${esc(b.millesime || '')}${n > 1 ? ` <small>×${n}</small>` : ''}</span></button>`;
 }
 function runSearch(show = true) {
@@ -1721,7 +1722,7 @@ function offerUndoAction(message, run) {
 function hideUndo() { clearTimeout(undoTimer); undoState = null; $('undo').hidden = true; document.body.classList.remove('undo-on'); }
 $('undoBtn').onclick = async () => {
   const st = undoState; hideUndo(); if (!st) return;
-  if (st.run) return st.run();
+  if (st.run) { try { await st.run(); } catch (e) { console.error(e); toast('Annulation impossible'); } return; }
   // Pour chaque emplacement, on remet la version la plus ancienne (avant la première suppression)
   const first = new Map(); for (const b of st.previous) if (!first.has(b.id)) first.set(b.id, b);
   // Bouteilles de cases : elles reprennent leur rang, et celles posées dessus entre-temps remontent (lib.js)
