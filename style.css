@@ -172,3 +172,13 @@ body.adjusting #hint { display: none; }
 /* Pendant le réglage, ni recherche ni menu : ils agiraient sur des séparations pas encore validées */
 body.adjusting #topbar, body.adjusting #results { display: none; }
 body.adjusting #adjustBar { top: calc(var(--sat) + 12px); }
+
+/* Remplir automatiquement : deux gros boutons côte à côte (photo, voix) */
+.autofill { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin: 6px 0 4px; }
+.autofill .btn { min-height: 88px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 17px; }
+.autofill .ico { font-size: 28px; line-height: 1; }
+.autofill .btn.rec { background: var(--danger); border-color: var(--danger); color: #fff; }
+.help.small { font-size: 13px; margin: 4px 0 6px; }
+#voiceText { width: 100%; min-height: 84px; font-size: 17px; }
+#form input.filled, #form textarea.filled { background: #fff6c8; }
+#form input, #form textarea { transition: background-color .6s; }

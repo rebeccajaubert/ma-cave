@@ -1,7 +1,7 @@
 import * as THREE from './vendor/three.module.min.js';
-import { esc, clamp, norm, RACK_ORDER, RACK_NAMES, slotId, parseId, isValidId, DEFAULT_CONFIG, CONFIG_REV, STYLES, rackGrid, casePlaces, pileOf, BOTTLE_D, moveSeparator, caseIdOf, newBottleId, pushToPile, removeFromPile, undoRemoval, normalizePile, migrateCaseRecords, placeLost, DEFAULT_STYLE, rackLimits, normalizeConfig, rackSizes, rackSize, meters, recordsIn, isNewerVersion, LEGACY_CONFIG, needsLegacyConfig, realRecordCount, shouldResetDemoToVerdelot, cellLayout, drinkSoon, qty, totalBottles, suggestions, findKnownWine, inheritableFields, needsSnapshot, copiesToDrop, backupReminderDue, lastLaunchedVersion, isDevMode, DAY_MS } from './lib.js';
+import { esc, clamp, norm, RACK_ORDER, RACK_NAMES, slotId, parseId, isValidId, DEFAULT_CONFIG, CONFIG_REV, STYLES, rackGrid, casePlaces, pileOf, BOTTLE_D, moveSeparator, caseIdOf, newBottleId, pushToPile, removeFromPile, undoRemoval, normalizePile, migrateCaseRecords, placeLost, DEFAULT_STYLE, rackLimits, normalizeConfig, rackSizes, rackSize, meters, recordsIn, isNewerVersion, LEGACY_CONFIG, needsLegacyConfig, realRecordCount, shouldResetDemoToVerdelot, cellLayout, drinkSoon, qty, totalBottles, suggestions, findKnownWine, inheritableFields, needsSnapshot, copiesToDrop, backupReminderDue, lastLaunchedVersion, isDevMode, mergeVoice, DAY_MS } from './lib.js';
 import { openStore, openCopies } from './db.js';
-import { getApiKey, setApiKey, clearApiKey, cleanApiKey, scanLabel, testApiKey, scanErrorMessage } from './scan.js';
+import { getApiKey, setApiKey, clearApiKey, cleanApiKey, scanLabel, readVoice, testApiKey, scanErrorMessage } from './scan.js';
 
 /* ============================================================
    Ma Cave — maquette 3D de la cave, façon plan d'architecte
@@ -937,12 +937,13 @@ function goTo(id, ids = '') {
 let scanToken = 0;   // invalide une lecture d'étiquette arrivée après que le formulaire a été quitté
 
 function openSheet(title, html, tall = false) {
+  stopVoice(false);   // une autre fiche (ou la même redessinée) : on n'écoute plus
   $('sheetTitle').textContent = title; $('sheetBody').innerHTML = html;
   $('sheet').classList.toggle('tall', tall); $('sheet').hidden = false; $('sheetBody').scrollTop = 0;
   $('results').hidden = true;
 }
 function closeSheet() {
-  scanToken++;
+  scanToken++; stopVoice(false);
   const had = selected; $('sheet').hidden = true; $('sheetBody').innerHTML = ''; hideHero(); selRing.visible = false; selected = null;
   // Bouteilles allumées depuis une fiche ou une liste : on les éteint en la fermant (sauf recherche en cours,
   // où la bouteille choisie reste entourée pour qu'on la retrouve)
@@ -1000,12 +1001,16 @@ function showForm(id, draft = null) {
   openSheet(existing ? 'Modifier la fiche' : inCase ? 'Ajouter des bouteilles' : 'Nouvelle fiche', `
     <form id="form" data-id="${id}" autocomplete="off">
       <div class="loc">${locText(id)}</div>
-      <div class="field">Étiquette
+      <div class="field">Remplir automatiquement
+        <div class="autofill">
+          <button type="button" class="btn" data-act="photo"><span class="ico" aria-hidden="true">📷</span>${draftPhoto ? 'Changer la photo' : 'Photo de l\'étiquette'}</button>
+          ${hasKey ? `<button type="button" class="btn" data-act="voice" id="voiceBtn"><span class="ico" aria-hidden="true">🎤</span><span class="lbl">${b._voice ? 'Reparler' : 'Parler'}</span></button>` : ''}
+        </div>
+        ${hasKey ? '<p class="help small">Ce que vous photographiez ou dites est envoyé à Google pour remplir la fiche.</p>' : ''}
         <div id="photoZone">${draftPhoto ? `<img class="photo" src="${esc(draftPhoto)}" alt="">` : ''}</div>
-        <div class="btns"><button type="button" class="btn" data-act="photo">${draftPhoto ? 'Changer la photo' : 'Photographier l\'étiquette'}</button>
-        ${draftPhoto && hasKey ? '<button type="button" class="btn" data-act="scan">Lire l\'étiquette</button>' : ''}
-        ${draftPhoto ? '<button type="button" class="btn danger" data-act="nophoto">Retirer</button>' : ''}</div>
-        <div id="scanStatus" class="scan" role="status" aria-live="polite">${hasKey ? '' : 'Astuce : activez « Lecture des étiquettes » dans le menu pour remplir la fiche à partir de la photo.'}</div>
+        ${draftPhoto ? `<div class="btns">${hasKey ? '<button type="button" class="btn" data-act="scan">Lire l\'étiquette</button>' : ''}<button type="button" class="btn danger" data-act="nophoto">Retirer la photo</button></div>` : ''}
+        <div id="voiceZone"></div>
+        <div id="scanStatus" class="scan" role="status" aria-live="polite">${hasKey ? '' : 'Astuce : activez « Lecture automatique » dans le menu pour remplir la fiche à partir d\'une photo ou de la voix.'}</div>
       </div>
       <label>Nom / Domaine / Château<input name="nom" list="dl-nom" value="${v('nom')}" placeholder="Château Margaux" required></label>
       <div class="field">Couleur
@@ -1042,6 +1047,10 @@ function showForm(id, draft = null) {
       </div>
     </form>`, true);
   if (b._touched) $('form').dataset.colorTouched = '1';
+  // Après un nouvel affichage (photo prise, photo retirée) : champs tapés à la main, champs remplis par la voix, texte compris
+  if (b._hand) $('form').dataset.hand = b._hand;
+  if (b._auto) $('form').dataset.auto = b._auto;
+  if (b._voice) showVoiceZone(b._voice);
 }
 /** Valeurs actuellement saisies dans le formulaire. */
 function formDraft() {
@@ -1049,6 +1058,7 @@ function formDraft() {
   const d = Object.fromEntries(new FormData(f).entries());
   d.couleur = f.querySelector('.chip.on')?.dataset.couleur || 'rouge';
   d._touched = f.dataset.colorTouched === '1';   // l'utilisateur a-t-il choisi la couleur lui-même ?
+  d._hand = f.dataset.hand || ''; d._auto = f.dataset.auto || ''; d._voice = $('voiceText')?.value || '';
   return d;
 }
 /** Réaffiche le formulaire en gardant les saisies et la position de défilement. */
@@ -1119,17 +1129,125 @@ async function runScan() {
   }
 }
 
+// ---------- Saisie à la voix ----------
+let voice = null;              // enregistrement en cours : { rec, stream, chunks, timer, started, token, send }
+const VOICE_MAX_S = 60;        // au-delà, l'enregistrement s'arrête et part tout seul
+const listOf = (s) => (s ? s.split(',').filter(Boolean) : []);
+function markHand(form, name) { const h = listOf(form.dataset.hand); if (!h.includes(name)) { h.push(name); form.dataset.hand = h.join(','); } }
+
+/** Zone « J'ai compris » : texte modifiable (secours : dictée du clavier ou saisie) et « Remplir la fiche ». */
+function showVoiceZone(text, hint = '') {
+  const zone = $('voiceZone'); if (!zone) return;
+  zone.innerHTML = `${hint ? `<p class="help">${esc(hint)}</p>` : ''}
+    <label class="field">J'ai compris :<textarea id="voiceText" rows="3" placeholder="Château Talbot 2016, Saint-Julien, j'en ai six…"></textarea></label>
+    <div class="btns"><button type="button" class="btn primary" data-act="voice-text">Remplir la fiche</button></div>`;
+  $('voiceText').value = text;   // posé comme valeur, jamais comme HTML
+  const lbl = $('voiceBtn')?.querySelector('.lbl'); if (lbl && text) lbl.textContent = 'Reparler';
+}
+/** Libellé du bouton pendant l'enregistrement, et arrêt automatique au bout d'une minute. */
+function tickVoice() {
+  if (!voice) return;
+  const s = Math.floor((Date.now() - voice.started) / 1000), btn = $('voiceBtn');
+  if (s >= VOICE_MAX_S) { stopVoice(true); return; }
+  if (btn) { btn.classList.add('rec'); btn.querySelector('.ico').textContent = '■'; btn.querySelector('.lbl').textContent = `J'ai fini (${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')})`; }
+}
+/** Commence l'écoute. Sans micro (refusé, ou impossible sur cet appareil) : le champ texte prend le relais. */
+async function startVoice() {
+  const form = $('form'); if (!form || voice || form.dataset.scanning) return;
+  if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+    return showVoiceZone($('voiceText')?.value || '', 'Touchez le champ ci-dessous puis le micro du clavier pour dicter, ou écrivez.');
+  }
+  const token = scanToken, id = form.dataset.id;
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch (e) {
+    return showVoiceZone($('voiceText')?.value || '', e?.name === 'NotAllowedError'
+      ? 'Le micro n\'est pas autorisé : touchez « Autoriser » quand l\'iPhone le demande, ou dictez avec le micro du clavier ci-dessous.'
+      : 'Micro indisponible : touchez le champ ci-dessous puis le micro du clavier pour dicter, ou écrivez.');
+  }
+  // Fiche quittée pendant la demande d'autorisation : on libère le micro tout de suite
+  if (token !== scanToken || $('form')?.dataset.id !== id || voice) { stream.getTracks().forEach((t) => t.stop()); return; }
+  const type = ['audio/mp4', 'audio/webm', 'audio/ogg'].find((t) => MediaRecorder.isTypeSupported?.(t));
+  let rec;
+  try { rec = new MediaRecorder(stream, type ? { mimeType: type } : undefined); } catch (e) {
+    console.error(e); stream.getTracks().forEach((t) => t.stop());
+    return showVoiceZone($('voiceText')?.value || '', 'Enregistrement impossible : touchez le champ ci-dessous puis le micro du clavier pour dicter.');
+  }
+  const v = { rec, stream, chunks: [], started: Date.now(), token, send: false };
+  rec.ondataavailable = (e) => { if (e.data?.size) v.chunks.push(e.data); };
+  rec.onstop = () => {
+    v.stream.getTracks().forEach((t) => t.stop());
+    if (!v.send) return;
+    const blob = new Blob(v.chunks, { type: rec.mimeType || type || 'audio/mp4' });
+    if (!blob.size) { const st = $('scanStatus'); if (st) { st.className = 'scan err'; st.textContent = scanErrorMessage({ kind: 'empty' }); } return; }
+    const fr = new FileReader();
+    fr.onload = () => {
+      const m = /^data:([^;,]+)[^,]*;base64,(.*)$/.exec(String(fr.result));
+      if (m && v.token === scanToken) runVoice({ audio: { mimeType: m[1], data: m[2] } });
+    };
+    fr.readAsDataURL(blob);
+  };
+  voice = v; rec.start(); v.timer = setInterval(tickVoice, 1000); tickVoice();
+  const st = $('scanStatus'); if (st) { st.className = 'scan busy'; st.textContent = 'Je vous écoute… touchez « J\'ai fini » quand c\'est dit.'; }
+}
+/** Arrête l'écoute ; `send` : envoyer ce qui a été dit (sinon on jette, et le micro est libéré). */
+function stopVoice(send) {
+  if (!voice) return;
+  const v = voice; voice = null; clearInterval(v.timer); v.send = send;
+  try { if (v.rec.state !== 'inactive') v.rec.stop(); else v.stream.getTracks().forEach((t) => t.stop()); } catch { v.stream.getTracks().forEach((t) => t.stop()); }
+  if (!send) v.stream.getTracks().forEach((t) => t.stop());
+  const btn = $('voiceBtn');
+  if (btn) { btn.classList.remove('rec'); btn.querySelector('.ico').textContent = '🎤'; btn.querySelector('.lbl').textContent = $('voiceText')?.value ? 'Reparler' : 'Parler'; }
+}
+/**
+ * Fait comprendre ce qui a été dit (audio) ou écrit (texte) puis remplit la fiche. Le texte affiché fait foi : en texte,
+ * il est renvoyé tel quel ; en audio, la nouvelle phrase s'ajoute à ce qui avait déjà été compris (« Reparler »).
+ */
+async function runVoice({ audio, text }) {
+  const form = $('form'), key = getApiKey();
+  if (!form || !key || form.dataset.scanning) return;
+  const before = audio ? ($('voiceText')?.value || '').trim() : '';
+  if (!audio && !String(text).trim()) { showVoiceZone('', 'Écrivez ou dictez quelques mots sur la bouteille, puis touchez « Remplir la fiche ».'); return; }
+  form.dataset.scanning = '1';
+  const btns = form.querySelectorAll('[data-act=voice], [data-act=voice-text], [data-act=scan]'); btns.forEach((b) => { b.disabled = true; });
+  const token = ++scanToken, id = form.dataset.id, status = $('scanStatus');
+  const say = (cls, msg) => { status.className = 'scan ' + cls; status.textContent = msg; };
+  say('busy', 'Je remplis la fiche…');
+  try {
+    const out = await readVoice({ audio, text, before, apiKey: key, year: new Date().getFullYear() });
+    const f = $('form'); if (token !== scanToken || !f || f.dataset.id !== id) return;   // l'utilisateur est parti entre-temps
+    showVoiceZone(audio ? [before, out.transcription].filter(Boolean).join(' ') : String(text));
+    const fields = [...f.elements].filter((el) => el.name && el.type !== 'hidden' && el.type !== 'submit').map((el) => el.name).concat('couleur');
+    const { set, auto } = mergeVoice(out, { hand: listOf(f.dataset.hand), auto: listOf(f.dataset.auto), fields });
+    for (const [k, val] of Object.entries(set)) {
+      if (k === 'couleur') { setChip(val); continue; }
+      const el = f.elements[k]; if (!el) continue;
+      el.value = val; el.classList.add('filled'); setTimeout(() => el.classList.remove('filled'), 1500);
+    }
+    f.dataset.auto = auto.join(',');
+    prefillFromKnown(f);
+    say('ok', auto.length ? 'Fiche remplie : vérifiez les champs avant d\'enregistrer.' : 'Compris, mais rien de nouveau à mettre dans la fiche.');
+  } catch (e) {
+    console.error(e);
+    if (token === scanToken && $('form')) {
+      say('err', scanErrorMessage(e));
+      if (!$('voiceText')) showVoiceZone(text || '', 'Vous pouvez aussi dicter avec le micro du clavier ou écrire ci-dessous.');
+    }
+  } finally {
+    delete form.dataset.scanning; btns.forEach((b) => { b.disabled = false; });
+  }
+}
+
 /** Réglages de la lecture d'étiquette : clé Google, test, désactivation. */
 function showScanSettings(msg = '') {
   const has = !!getApiKey();
-  openSheet('Lecture des étiquettes', `
-    <p class="help">Quand vous photographiez une étiquette, l'application peut lire le nom, le millésime, l'appellation… et remplir la fiche toute seule. Elle utilise pour cela l'IA gratuite de Google (Gemini).</p>
+  openSheet('Lecture automatique (photo et voix)', `
+    <p class="help">Quand vous photographiez une étiquette, ou quand vous décrivez la bouteille à voix haute (« 🎤 Parler »), l'application peut remplir la fiche toute seule : nom, millésime, appellation, nombre de bouteilles… Vous vérifiez, puis vous enregistrez. Elle utilise pour cela l'IA gratuite de Google (Gemini).</p>
     <p class="scan ${has ? 'ok' : ''}" role="status">${esc(msg || (has ? 'Lecture automatique activée.' : 'Lecture automatique non activée.'))}</p>
     <h3>Activer en 3 étapes</h3>
     <p class="help">1. Ouvrez <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> et connectez-vous avec un compte Google.<br>2. Touchez « Create API key » (gratuit, sans carte bancaire).<br>3. Copiez la clé et collez-la ci-dessous.</p>
     <label class="field">Clé Google AI Studio<input id="scanKey" type="text" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="off" placeholder="${has ? 'Une clé est déjà enregistrée' : 'AIza…'}"></label>
     <div class="btns"><button class="btn primary block" data-act="scan-save">Enregistrer la clé</button><button class="btn" data-act="scan-test">Tester</button>${has ? '<button class="btn danger" data-act="scan-clear">Désactiver</button>' : ''}</div>
-    <p class="help"><b>À savoir :</b> la photo est envoyée à Google pour être lue. Avec l'offre gratuite, Google peut réutiliser ces contenus pour améliorer ses produits : ne photographiez que des étiquettes. La clé reste uniquement sur cet appareil et n'apparaît dans aucune sauvegarde.</p>
+    <p class="help"><b>À savoir :</b> la photo, ou ce que vous dites, est envoyé à Google pour être compris. Avec l'offre gratuite, Google peut réutiliser ces contenus pour améliorer ses produits : ne photographiez que des étiquettes, et ne dites que ce qui concerne la bouteille. La clé reste uniquement sur cet appareil et n'apparaît dans aucune sauvegarde.</p>
     <div class="btns"><button class="btn block" data-act="menu">Retour</button></div>`, true);
 }
 /** Teste la clé (saisie ou enregistrée) et affiche le résultat dans l'écran de réglages. */
@@ -1151,7 +1269,7 @@ $('sheetBody').addEventListener('click', async (e) => {
   const tstep = e.target.closest('[data-tstep]');
   if (tstep) { stepTool(tstep); return; }
   const chip = e.target.closest('[data-couleur]');
-  if (chip) { setChip(chip.dataset.couleur); $('form').dataset.colorTouched = '1'; return; }
+  if (chip) { setChip(chip.dataset.couleur); $('form').dataset.colorTouched = '1'; markHand($('form'), 'couleur'); return; }
   const step = e.target.closest('[data-step]');
   if (step) { const el = $('form').elements.quantite; el.value = clamp(qty({ quantite: el.value }) + (+step.dataset.step), 1, 99); return; }
   const row = e.target.closest('[data-goto]');
@@ -1166,6 +1284,8 @@ $('sheetBody').addEventListener('click', async (e) => {
   else if (act === 'photo') $('photoInput').click();
   else if (act === 'nophoto') { const d = formDraft(); draftPhoto = null; redrawForm(d); }
   else if (act === 'scan') runScan();
+  else if (act === 'voice') { if (voice) stopVoice(true); else startVoice(); }
+  else if (act === 'voice-text') runVoice({ text: $('voiceText')?.value || '' });
   else if ((act === 'drink' || act === 'remove') && parseId(id).u) {   // bouteille de case : celles du dessus descendent
     if (!await ask(`Retirer « ${b.nom} » de la cave ? Sa fiche sera supprimée, et les bouteilles posées dessus descendront d'une place.`, 'Retirer')) return;
     if (await removeBottles([id], 'Bouteille retirée')) { if (racks[parseId(id).k]?.isCases) showCase(caseIdOf(id)); else closeSheet(); }
@@ -1253,7 +1373,7 @@ $('sheetBody').addEventListener('submit', async (e) => {
   e.preventDefault();
   if (e.target.id === 'form') {
     const id = e.target.dataset.id, old = bottleAt(id), more = e.submitter?.value === 'more';
-    const { _touched, ...d } = formDraft();
+    const d = Object.fromEntries(Object.entries(formDraft()).filter(([k]) => !k.startsWith('_')));   // pas l'état du formulaire
     for (const k in d) d[k] = String(d[k]).trim();
     if (!d.nom) return toast('Indiquez au moins le nom');
     if (isCasesRack(parseId(id).k)) { await submitCaseForm(id, d, more); return; }
@@ -1402,7 +1522,7 @@ function showMenu() {
     <div class="btns">
       <button class="btn block" data-act="inventory">Liste de mes bouteilles</button>
       <button class="btn block" data-act="soon">À boire bientôt</button>
-      <button class="btn block" data-act="scan-settings">Lecture des étiquettes${getApiKey() ? ' (activée)' : ''}</button>
+      <button class="btn block" data-act="scan-settings">Lecture automatique (photo et voix)${getApiKey() ? ' (activée)' : ''}</button>
       <button class="btn block" data-act="config">Rangement de la cave</button>
       <button class="btn block" data-act="export">Sauvegarder mes données</button>
       <p class="help">${safetyLine()}</p>
@@ -1463,6 +1583,8 @@ function updateSize(box) {
   box.querySelector('[data-size]').textContent = sizeText(style, clamp(parseInt(v('cols')) || 0, 0, lim.cols), clamp(parseInt(v('rows')) || 0, 0, lim.rows), k);
 }
 $('sheetBody').addEventListener('input', (e) => { const box = e.target.closest('#configForm [data-rack]'); if (box) updateSize(box); });
+// Fiche : un champ tapé à la main n'est plus jamais remplacé par la voix (les valeurs posées par le code ne déclenchent pas « input »)
+$('sheetBody').addEventListener('input', (e) => { if (e.target.form?.id === 'form' && e.target.name) markHand(e.target.form, e.target.name); });
 /** Choix d'un type de rangement dans les réglages : met à jour l'aide et les maximums affichés. */
 function pickStyle(chip) {
   const box = chip.closest('[data-rack]'), k = box.dataset.rack, style = chip.dataset.style, lim = rackLimits(k, style);
@@ -1646,7 +1768,7 @@ function showWelcome() {
     <ol class="steps">
       <li><b>Choisissez un casier</b> : touchez-le sur la maquette, ou utilisez les boutons en bas de l'écran.</li>
       <li><b>Touchez une case</b> : elle s'affiche en grand avec ce qu'elle contient, et « Ajouter des bouteilles ». Touchez ensuite une bouteille pour voir sa fiche. Dans les casiers métalliques, touchez directement une place.</li>
-      <li><b>Photographiez l'étiquette</b> : la fiche peut se remplir toute seule (menu, « Lecture des étiquettes »).</li>
+      <li><b>Photographiez l'étiquette ou parlez</b> : « 🎤 Parler », puis dites ce que vous savez de la bouteille (« Château Talbot 2016, j'en ai six, offert par Paul »). La fiche se remplit toute seule ; vérifiez, puis enregistrez (menu, « Lecture automatique »).</li>
       <li><b>Cherchez</b> une bouteille en haut de l'écran : elle s'entoure d'orange dans la cave.</li>
     </ol>
     <p class="help">Glissez un doigt pour tourner la maquette ou faire défiler un casier, écartez deux doigts pour zoomer. Tout est enregistré sur ce téléphone, au fur et à mesure.</p>

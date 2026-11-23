@@ -20,6 +20,12 @@ test('buildVoiceRequest : audio en ligne, ou texte ; JSON demandé', () => {
   assert.match(t.contents[0].parts[1].text, /Talbot 2016/); assert.equal(t.generationConfig.responseSchema, undefined);
 });
 
+test('buildVoiceRequest : « Reparler » envoie aussi ce qui avait déjà été dit, avant le nouvel audio', () => {
+  const r = buildVoiceRequest({ audio: { mimeType: 'audio/mp4', data: 'QUJD' }, before: 'Talbot 2016', year: 2026 });
+  assert.equal(r.contents[0].parts.length, 3);
+  assert.match(r.contents[0].parts[1].text, /Talbot 2016/); assert.ok(r.contents[0].parts[2].inlineData);
+});
+
 test('parseVoiceResponse : normalise les nombres, rejette le reste', () => {
   const r = parseVoiceResponse(reply({ transcription: ' Talbot  2016 ', nom: 'Château Talbot', millesime: '16', apogee: 'avant 2030',
     couleur: 'Rouge', quantite: 'six', prix: '20,50 €', note: '17/20', commentaire: 'x'.repeat(400), region: '<b>Bordeaux</b>' }));
@@ -85,4 +91,14 @@ test('mergeVoice : quantité seulement si le formulaire en a une ; couleur vidé
 test('mergeVoice : un champ tapé à la main après un remplissage vocal n\'est ni remplacé ni vidé', () => {
   const r = mergeVoice(out({ prix: '30' }), { hand: ['nom', 'prix'], auto: ['nom'], fields: F });
   assert.deepEqual(r.set, {}); assert.deepEqual(r.auto, []);
+});
+
+// Google refuse une valeur vide dans une énumération du schéma (« enum[0]: cannot be empty ») : la requête avec schéma
+// échouait toujours (400) et seule la seconde, sans schéma, passait.
+import { buildRequest } from '../scan.js';
+test('schémas de réponse : aucune valeur vide dans les énumérations (photo et voix)', () => {
+  const enums = (schema) => Object.values(schema.properties).flatMap((p) => p.enum || []);
+  const photo = buildRequest('data:image/png;base64,AAAA').generationConfig.responseSchema;
+  const voix = buildVoiceRequest({ text: 'x', year: 2026 }).generationConfig.responseSchema;
+  for (const s of [photo, voix]) assert.ok(!enums(s).includes(''), JSON.stringify(enums(s)));
 });
