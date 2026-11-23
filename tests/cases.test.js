@@ -1,7 +1,7 @@
 // Tests de la géométrie des cases maçonnées : places en quinconce, grille d'un casier, séparations, réglage.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { casePlaces, rackGrid, moveSeparator, normalizeConfig, DEFAULT_CONFIG, CONFIG_REV, BOTTLE_D, CASE_MIN } from '../lib.js';
+import { casePlaces, rackGrid, moveSeparator, normalizeConfig, DEFAULT_CONFIG, CONFIG_REV, BOTTLE_D, CASE_MIN } from '../js/lib.js';
 
 const near = (a, b) => Math.abs(a - b) < 1e-9;
 
@@ -60,7 +60,7 @@ test('moveSeparator : jamais au-delà de la taille maximale d\'une case (CASE_MA
 });
 
 // Toucher une case : dernier bord à gauche (ou sous) le doigt, sans findLastIndex (absent avant iOS 15.4)
-import { lastAtMost } from '../lib.js';
+import { lastAtMost } from '../js/lib.js';
 test('lastAtMost : dernier bord à gauche ou en dessous du doigt', () => {
   const e = [0, 0.5, 1.2, 1.8];
   assert.equal(lastAtMost(e, -0.1), 0); assert.equal(lastAtMost(e, 0), 0); assert.equal(lastAtMost(e, 0.49), 0);

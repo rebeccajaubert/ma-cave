@@ -7,5 +7,4 @@ self.APP_VERSION = '1.0.0';
 
 // Fichiers mis en cache pour le mode hors-ligne, et retéléchargés par le bouton « Mettre à jour ».
 // Tout nouveau fichier de l'app doit être ajouté ici.
-self.APP_FILES = ['./', 'index.html', 'style.css', 'app.js', 'lib.js', 'db.js', 'scan.js', 'version.js',
-  'vendor/three.module.min.js', 'manifest.webmanifest', 'icons/icon-180.png', 'icons/icon-512.png'];
+self.APP_FILES = ['./', 'index.html', 'css/style.css', 'js/app.js', 'js/autofill.js', 'js/backup.js', 'js/cases.js', 'js/data.js', 'js/db.js', 'js/demo.js', 'js/lib.js', 'js/menu.js', 'js/scan.js', 'js/scene.js', 'js/search.js', 'js/sheet.js', 'js/touch.js', 'js/undo.js', 'js/updates.js', 'js/util.js', 'version.js', 'vendor/three.module.min.js', 'manifest.webmanifest', 'icons/icon-180.png', 'icons/icon-512.png'];

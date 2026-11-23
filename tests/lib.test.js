@@ -1,7 +1,7 @@
 // Tests des fonctions pures (lib.js) : `npm test`
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { esc, norm, clamp, slotId, parseId, isValidId, normalizeConfig, DEFAULT_CONFIG, CONFIG_REV, STYLES, rackLimits, recordsIn, drinkSoon, rackSize, meters, isNewerVersion, LEGACY_CONFIG, needsLegacyConfig, realRecordCount, shouldResetDemoToVerdelot, cellLayout, qty, totalBottles, suggestions, findKnownWine, inheritableFields, caveSummary } from '../lib.js';
+import { esc, norm, clamp, slotId, parseId, isValidId, normalizeConfig, DEFAULT_CONFIG, CONFIG_REV, STYLES, rackLimits, recordsIn, drinkSoon, rackSize, meters, isNewerVersion, LEGACY_CONFIG, needsLegacyConfig, realRecordCount, shouldResetDemoToVerdelot, cellLayout, qty, totalBottles, suggestions, findKnownWine, inheritableFields, caveSummary } from '../js/lib.js';
 
 test('esc neutralise le HTML', () => {
   assert.equal(esc('<img src=x onerror="a()">'), '&lt;img src=x onerror=&quot;a()&quot;&gt;');
@@ -188,7 +188,7 @@ test('caveSummary accorde au singulier et au pluriel', () => {
   assert.equal(caveSummary(0, 0), '0 bouteille · 0 place libre');
 });
 
-import { rackSizes } from '../lib.js';
+import { rackSizes } from '../js/lib.js';
 test('rackSizes : les casiers du réglage', () => {
   assert.equal(rackSizes(DEFAULT_CONFIG), DEFAULT_CONFIG.racks);
   assert.deepEqual(Object.keys(rackSizes(DEFAULT_CONFIG)).sort(), ['D', 'G', 'ID', 'IG']);

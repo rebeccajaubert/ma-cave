@@ -65,7 +65,7 @@ Il n'y a volontairement **pas de fichier `.env`** : l'app n'a pas de serveur, et
 - La clé est stockée **uniquement sur l'appareil** (jamais dans le code, GitHub ou les sauvegardes).
 - Avec l'offre gratuite, Google peut réutiliser le contenu envoyé pour améliorer ses produits : ne photographier que des étiquettes, ne dire que ce qui concerne la bouteille.
 - À la voix : l'iPhone demande l'accès au micro (souvent à chaque ouverture de l'app installée). Enregistrement d'une minute au plus. Ce que la voix remplit remplace la valeur d'un champ, sauf ce qui a été tapé à la main dans la fiche ; le prix est compris par bouteille. Le micro n'est permis que sur une page sûre (HTTPS, ou `localhost`) : pour l'essayer avant publication, utiliser le simulateur iOS sur `http://localhost:8765`.
-- Sans clé ou sans réseau, la saisie manuelle reste disponible. Le modèle utilisé est défini dans `scan.js` (`MODELS`) ; les modèles Gemini changent, voir la documentation Google si la lecture cesse de fonctionner.
+- Sans clé ou sans réseau, la saisie manuelle reste disponible. Le modèle utilisé est défini dans `js/scan.js` (`MODELS`) ; les modèles Gemini changent, voir la documentation Google si la lecture cesse de fonctionner.
 
 ## Données et confidentialité
 
@@ -93,15 +93,16 @@ Ajouter `?debug` à l'adresse expose `window.__cave` pour les tests dans le navi
 
 | Fichier | Rôle |
 |---|---|
-| `index.html`, `style.css` | Page, interface (conçue pour un public peu à l'aise avec le numérique : gros boutons, textes clairs) |
-| `app.js` | Scène 3D (Three.js), interactions, fiches, menu |
-| `lib.js` | Fonctions pures (échappement HTML, identifiants, dimensions, quantités, suggestions ; pile des cases maçonnées, places en quinconce, séparations ; copies de sécurité et rappel de sauvegarde) |
-| `db.js` | Stockage local IndexedDB (fiches, et copies de sécurité dans une base à part) |
-| `scan.js` | Lecture automatique via Gemini : étiquette (photo) et description à la voix ou écrite (clé, requêtes, validation des réponses) |
+| `index.html`, `css/style.css` | Page, interface (conçue pour un public peu à l'aise avec le numérique : gros boutons, textes clairs) |
+| `js/` | Le code de l'application, en modules (carte complète en tête de `js/util.js`) : `app.js` (démarrage), `util.js` (outils, dialogues), `data.js` (réglage, fiches), `scene.js` (scène 3D), `touch.js` (gestes), `cases.js` (piles des cases), `sheet.js` (fiche du bas, formulaire), `autofill.js` (photo et voix), `search.js` (recherche), `menu.js` (menu, réglages, aides), `undo.js` (« Annuler »), `updates.js` (mises à jour), `backup.js` (sauvegardes), `demo.js` (exemples) |
+| `js/lib.js` | Fonctions pures (échappement HTML, identifiants, dimensions, quantités, suggestions ; pile des cases maçonnées, places en quinconce, séparations ; copies de sécurité et rappel de sauvegarde) |
+| `js/db.js` | Stockage local IndexedDB (fiches, et copies de sécurité dans une base à part) |
+| `js/scan.js` | Lecture automatique via Gemini : étiquette (photo) et description à la voix ou écrite (clé, requêtes, validation des réponses) |
 | `version.js` | Numéro de version, source unique |
 | `sw.js`, `manifest.webmanifest`, `icons/` | Mode hors-ligne et installation iPhone |
 | `vendor/` | Three.js (copie locale, licence MIT) |
 | `tests/` | Tests `node --test` |
+| `app.js`, `lib.js`, `db.js`, `scan.js`, `style.css` (racine) | Relais provisoires vers `js/` et `css/` : un téléphone encore en 1.0.0 en a besoin pour se mettre à jour. À supprimer dans une version suivante |
 | `.github/workflows/tests.yml` | Tests automatiques sur GitHub (`npm test` à chaque envoi et demande de fusion) |
 | `.github/workflows/deploy.yml` | Mise en ligne d'une version à la création de sa Release (ou d'une version précédente, à la main) |
 | `.claude/` | Agent de relecture de code et automatisations (voir plus bas) |

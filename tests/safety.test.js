@@ -1,7 +1,7 @@
 // Tests des protections des données : copie avant mise à jour, copies gardées, rappel de sauvegarde.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { needsSnapshot, copiesToDrop, backupReminderDue, lastLaunchedVersion, DAY_MS } from '../lib.js';
+import { needsSnapshot, copiesToDrop, backupReminderDue, lastLaunchedVersion, DAY_MS } from '../js/lib.js';
 
 test('needsSnapshot : copie au premier lancement d\'une nouvelle version, s\'il y a de vraies fiches', () => {
   assert.equal(needsSnapshot('0.4.2', '0.4.3', 12), true);

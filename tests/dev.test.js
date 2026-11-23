@@ -1,7 +1,7 @@
 // Bouteilles d'exemple réservées au développement : jamais sur le téléphone d'un utilisateur.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isDevMode } from '../lib.js';
+import { isDevMode } from '../js/lib.js';
 
 test('isDevMode : serveur local ou ?debug seulement', () => {
   assert.equal(isDevMode('localhost', ''), true);
