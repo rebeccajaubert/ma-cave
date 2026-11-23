@@ -4,9 +4,9 @@ import { getApiKey, cleanApiKey, setApiKey, clearApiKey } from './scan.js';
 import { checkScanKey, markHand, runScan, runVoice, showScanSettings, showVoiceZone, startVoice, stopVoice, voice } from './autofill.js';
 import { exportData, restoreCopy, showCopies } from './backup.js';
 import { WINE_FIELDS, addToCase, capacityOf, isCasesRack, locText, removeBottles, styleOf, wineOf } from './cases.js';
-import { CONFIG_KEY, DEV, TYPES, allBottles, bottleAt, deleteRecord, persistBatch, records, saveRecord, saved, typeOf } from './data.js';
+import { CONFIG_KEY, DEV, TYPES, allBottles, bottleAt, colNo, deleteRecord, persistBatch, records, saveRecord, saved, typeOf } from './data.js';
 import { clearDemo, seedDemo } from './demo.js';
-import { clearPart, confirmConfigChange, pickStyle, showConfig, showInstall, showInventory, showMenu, showRackTools, showSettings, showSoon, showWelcome, stepTool } from './menu.js';
+import { clearPart, confirmConfigChange, pickEntree, pickStyle, shiftLayout, showConfig, showInstall, showInventory, showMenu, showRackTools, showSettings, showSoon, showWelcome, stepTool } from './menu.js';
 import { BOTTLE_OUT, adjust, bottleLocal, caseLocal, clampView, dFor, dMax, focusCase, focusSlot, hideHero, highlighted, inRack, presentBottle, racks, rebuildBottles, restV, rk, selRing, setHighlight, setPicked, showRack, slotWorld, startAdjust, view, viewW } from './scene.js';
 import { runSearch } from './search.js';
 import { pick } from './touch.js';
@@ -112,7 +112,7 @@ function showCase(caseId, hl = null) {
   const pile = pileOf(allBottles(), caseId), cap = capacityOf(caseId), groups = new Map();
   for (const b of pile) { const g = `${norm(b.nom)}|${b.millesime || ''}`; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(b); }
   const lost = bottleAt(caseId);   // ancienne fiche restée « à ranger » faute de place
-  openSheet(`${RACK_NAMES[k]} · colonne ${c + 1} · rangée ${r + 1}`, `
+  openSheet(`${RACK_NAMES[k]} · colonne ${colNo(k, c)} · rangée ${r + 1}`, `
     <div class="list">${[...groups.values()].map((g) => `<button class="row" data-hl="${g.map((b) => b.id).join(',')}"><span class="dot" style="background:${typeOf(g[0]).css}"></span>
       <span class="main"><div class="n">${esc(g[0].nom || 'Sans nom')}</div><div class="s">${esc(g[0].appellation || '')}</div></span>
       <span class="y">${esc(g[0].millesime || '')} <small>×${g.length}</small></span></button>`).join('') || '<div class="empty">Cette case est vide.</div>'}</div>
@@ -304,6 +304,10 @@ export function prefillFromKnown(form) {
 $('sheetBody').addEventListener('click', async (e) => {
   const styleChip = e.target.closest('[data-style]');
   if (styleChip) { pickStyle(styleChip); return; }
+  const shift = e.target.closest('[data-shift]');   // réglage : décaler un casier ou l'îlot
+  if (shift) { shiftLayout(shift); return; }
+  const entree = e.target.closest('[data-entree]');
+  if (entree) { pickEntree(entree); return; }
   const tstep = e.target.closest('[data-tstep]');
   if (tstep) { stepTool(tstep); return; }
   const chip = e.target.closest('[data-couleur]');
@@ -434,8 +438,9 @@ $('sheetBody').addEventListener('submit', async (e) => {
   } else if (e.target.id === 'configForm') {
     const d = Object.fromEntries(new FormData(e.target).entries()), racksIn = {};
     // On garde les séparations réglées à la main (normalizeConfig les ajuste au nouveau nombre de colonnes et rangées)
-    for (const k of RACK_ORDER) racksIn[k] = { style: d[`${k}_style`], cols: d[`${k}_cols`], rows: d[`${k}_rows`], colW: rk[k].colW, rowH: rk[k].rowH };
-    const next = normalizeConfig({ nom: (d.nom || '').trim(), rev: CONFIG_REV, racks: racksIn });   // rev : valeurs choisies à l'instant, aucune conversion
+    for (const k of RACK_ORDER) racksIn[k] = { style: d[`${k}_style`], cols: d[`${k}_cols`], rows: d[`${k}_rows`], colW: rk[k].colW, rowH: rk[k].rowH, z: d[`${k}_z`] };
+    // Disposition : entrée, îlot et position de chaque casier (normalizeConfig borne et arrondit) ; texte vide → nom par défaut
+    const next = normalizeConfig({ nom: (d.nom || '').trim(), rev: CONFIG_REV, entree: d.entree, ilotX: d.ilotX, racks: racksIn });   // rev : valeurs choisies à l'instant, aucune conversion
     if (!await confirmConfigChange(next)) return;
     try { localStorage.setItem(CONFIG_KEY, JSON.stringify(next)); } catch { return toast('Impossible d\'enregistrer le réglage sur cet appareil (stockage bloqué)'); }
     location.reload();

@@ -39,7 +39,9 @@ Les toutes premières versions (avant 0.3.1) n'ont pas ce bouton et peuvent rest
 
 ## Rangement
 
-Chaque casier (mur gauche, îlot gauche, îlot droit, mur droit) a un **type de rangement**, un nombre de **colonnes** (depuis l'entrée) et de **rangées** (depuis le bas) : menu → *Rangement de la cave*. Chaque casier a donc sa propre taille (affichée en mètres pendant le réglage) : l'îlot peut être plus court ou plus long que les murs, et les murs différents entre eux. Les casiers sont centrés dans la longueur de la cave ; l'îlot est fait de deux casiers dos à dos, chacun avec sa propre taille.
+Chaque casier (mur gauche, îlot gauche, îlot droit, mur droit) a un **type de rangement**, un nombre de **colonnes** (depuis l'entrée) et de **rangées** (depuis le bas) : menu → *Rangement de la cave*. Chaque casier a donc sa propre taille (affichée en mètres pendant le réglage) : l'îlot peut être plus court ou plus long que les murs, et les murs différents entre eux. L'îlot est fait de deux casiers dos à dos, chacun avec sa propre taille.
+
+**Disposition** (même écran, en haut) : texte écrit au sol devant l'entrée (c'est aussi le nom de la cave, « La Cave de Verdelot » par défaut), côté de l'entrée (devant ou au fond), position de chaque casier le long de la cave (par 10 cm, jusqu'à 4 m de chaque côté) et de l'îlot entre les murs (en gardant 60 cm de passage). La cave s'allonge pour contenir les casiers. Les fiches restent attachées à leur casier, à leur colonne et à leur rangée : déplacer un casier le déplace avec ses bouteilles. La colonne 1 est toujours la plus proche de l'entrée ; seul le numéro affiché change quand l'entrée change de bout. Réglage : `entree`, `ilotX` et `z` de chaque casier dans `cave-config-v4` (`normalizeConfig`, `js/lib.js`).
 
 | Type | Un emplacement = | Disposition | Quantité par défaut |
 |---|---|---|---|

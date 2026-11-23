@@ -1,5 +1,5 @@
 // Données : réglage de la cave (dimensions), couleurs de vin, fiches en mémoire et leur enregistrement sur l'appareil.
-import { normalizeConfig, DEFAULT_CONFIG, isDevMode } from './lib.js';
+import { normalizeConfig, DEFAULT_CONFIG, isDevMode, colNumber } from './lib.js';
 import { toast } from './util.js';
 
 // ---------- Configuration (dimensions de la cave, gardées sur l'appareil) ----------
@@ -10,6 +10,8 @@ function loadConfig() {
   catch { return { ...DEFAULT_CONFIG }; }
 }
 export const config = loadConfig();
+/** Numéro de colonne montré à l'utilisateur (1 = la plus proche de l'entrée, qui peut être devant ou au fond). */
+export const colNo = (k, c) => colNumber(c, config.racks[k]?.cols ?? c + 1, config.entree);
 
 // ---------- Couleurs de vin ----------
 export const TYPES = {
