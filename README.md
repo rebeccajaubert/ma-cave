@@ -101,6 +101,7 @@ Ajouter `?debug` à l'adresse expose `window.__cave` pour les tests dans le navi
 | `sw.js`, `manifest.webmanifest`, `icons/` | Mode hors-ligne et installation iPhone |
 | `vendor/` | Three.js (copie locale, licence MIT) |
 | `tests/` | Tests `node --test` |
+| `.github/workflows/tests.yml` | Tests automatiques sur GitHub (`npm test` à chaque envoi et demande de fusion) |
 | `.claude/` | Agent de relecture de code et automatisations (voir plus bas) |
 
 Un emplacement s'identifie par `casier:colonne:rangée` (ex. `G:12:4`), colonnes comptées depuis l'entrée, rangées depuis le bas. Casiers : `G` mur gauche, `IG`/`ID` îlot gauche/droit, `D` mur droit. Dans une case maçonnée, chaque bouteille a son identifiant stable `casier:colonne:rangée:suffixe` et un champ `pile` (son rang dans la pile, 0 = coin en bas à droite) ; les tailles réglées des colonnes et rangées sont dans le réglage (`colW`, `rowH`, en mètres).
@@ -109,14 +110,31 @@ Un emplacement s'identifie par `casier:colonne:rangée` (ex. `G:12:4`), colonnes
 
 Le site est servi par **GitHub Pages** depuis la branche `main` (racine du dépôt) : **pousser sur `main` publie le site** en une à deux minutes. Il n'y a ni serveur ni étape de construction ; les fichiers du dépôt sont les fichiers servis.
 
+### Travailler sur une branche
+
+`main` est ce qui est en ligne : on n'y travaille jamais directement. Chaque chantier a sa branche, de préférence dans son propre dossier (plusieurs chantiers peuvent avancer en même temps sans se gêner) :
+
+```bash
+git worktree add ../app_cave-menu -b chantier/menu main
+```
+
+Les **tests automatiques** (GitHub Actions, `.github/workflows/tests.yml`) lancent `npm test` à chaque envoi d'une branche et sur chaque demande de fusion.
+
 ### Publier une version
 
-1. Mettre à jour le numéro dans `version.js` **et** `package.json`, et ajouter l'entrée en tête de `CHANGELOG.md` (un test vérifie qu'ils concordent).
-2. `npm test`.
-3. Commit, puis `git tag vX.Y.Z`.
-4. Après vérification sur un téléphone : `git push origin main --tags` (c'est ce push qui déploie).
+1. Sur la branche : mettre à jour le numéro dans `version.js` **et** `package.json`, les `?v=` de `index.html`, et ajouter l'entrée en tête de `CHANGELOG.md` (un test vérifie qu'ils concordent). Numérotation `MAJEUR.MINEUR.CORRECTIF` : correctif → CORRECTIF, nouvelle fonction → MINEUR, changement qui casse l'existant → MAJEUR.
+2. `npm test`, vérification en local (format iPhone).
+3. Envoyer la branche et ouvrir la demande de fusion : `git push -u origin chantier/<nom>` puis `gh pr create`.
+4. Quand les tests GitHub sont verts et après vérification : fusionner (`gh pr merge`). **C'est la fusion dans `main` qui met le site en ligne.** `main` est protégée : un envoi direct est refusé.
+5. Marquer la version publiée et créer sa page de Release :
+   ```bash
+   git switch main && git pull
+   git tag -a vX.Y.Z -m "Ma Cave X.Y.Z" && git push origin vX.Y.Z
+   gh release create vX.Y.Z --title "Ma Cave X.Y.Z" --notes-file notes.md
+   ```
+   (`notes.md` : l'entrée de la version dans `CHANGELOG.md`.)
 
-Revenir en arrière : `git revert <commit>` puis pousser.
+Chaque version publiée a son tag (`v0.1.0`, `v0.3.0` … `v0.5.0`) : `git checkout vX.Y.Z` retrouve exactement le code de cette version. Revenir en arrière : `git revert <commit>` sur une branche, puis la fusionner.
 
 ## Relecture de code automatisée
 
