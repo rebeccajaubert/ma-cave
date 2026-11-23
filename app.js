@@ -51,6 +51,7 @@ const UNKNOWN_GLASS = 0x14220e;
 
 // ---------- Fiches : en mémoire, et enregistrées sur l'appareil à chaque modification ----------
 let store = null;                // accès à la base locale (null si le stockage est indisponible)
+function setStore(s) { store = s; }
 // Mode développement (serveur local ou ?debug) : seul mode où existent les bouteilles d'exemple
 const DEV = isDevMode(location.hostname, location.search);
 const records = new Map();       // identifiant d'emplacement -> fiche
@@ -190,6 +191,9 @@ function canvasTex(w, h, draw, repeat = false) {
   t.anisotropy = 8;
   return t;
 }
+
+// Rayon de visée : ce que le doigt touche (toucher, réglage des séparations)
+const raycaster = new THREE.Raycaster(), ndc = new THREE.Vector2();
 
 // ---------- Sol, voûte en traits, repères ----------
 const decor = new THREE.Group(); scene.add(decor);   // masqué quand on regarde un casier de face
@@ -452,6 +456,9 @@ function rebuildBottles() {
 }
 let highlighted = [];    // identifiants mis en évidence par la recherche (anneaux orange)
 let picked = false;      // un résultat de recherche a été choisi : un enregistrement ne rallume pas toute la recherche
+/** Bouteilles à entourer d'orange (recherche, ligne de liste touchée) ; redessine les anneaux. */
+function setHighlight(ids) { highlighted = ids; rebuildRings(); }
+function setPicked(v) { picked = v; }
 function rebuildRings() {
   const count = {}; for (const k of RACK_ORDER) count[k] = 0;
   for (const id of highlighted) {
@@ -653,7 +660,6 @@ const sizesOf = (k, axis) => (axis === 'col' ? rk[k].colW : rk[k].rowH);
 function startAdjust(k) {
   if (!racks[k]?.isCases) return;
   if (adjust) endAdjust(false);   // un seul réglage à la fois : l'éventuel précédent est abandonné
-  closeSheet(); endMode(); $('results').hidden = true;
   const g = racks[k].grid;
   adjust = { k, before: { colW: rk[k].colW, rowH: rk[k].rowH }, sel: null, drag: null };
   rk[k].colW = [...g.colW]; rk[k].rowH = [...g.rowH];   // copie de travail, enregistrée par « Terminé »
@@ -728,7 +734,6 @@ function dragSeparator(l) {
 
 // ---------- Toucher : tourner, faire défiler, sélectionner ----------
 const pointers = new Map(); let tapStart = null, pinchDist = 0;
-const raycaster = new THREE.Raycaster(), ndc = new THREE.Vector2();
 canvas.addEventListener('pointerdown', (e) => {
   canvas.setPointerCapture(e.pointerId);
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -902,7 +907,7 @@ function showCase(caseId, hl = null) {
   hideHero(); selRing.visible = false;
   selected = { key: k, c, r, id: caseId, caseId }; lastSlot = selected;
   if (view.mode !== 'rack' || view.key !== k) showRack(k);
-  if (hl) { highlighted = hl; rebuildRings(); }
+  if (hl) setHighlight(hl);
   const pile = pileOf(allBottles(), caseId), cap = capacityOf(caseId), groups = new Map();
   for (const b of pile) { const g = `${norm(b.nom)}|${b.millesime || ''}`; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(b); }
   const lost = bottleAt(caseId);   // ancienne fiche restée « à ranger » faute de place
@@ -926,7 +931,7 @@ function goTo(id, ids = '') {
   const { k, c, r, u } = parseId(id), list = ids ? ids.split(',') : [id];
   // Seules les bouteilles de la ligne choisie restent entourées : sinon une recherche large (« Chat ») laissait
   // allumés tous les « Château… » alors qu'on venait d'en choisir un.
-  highlighted = list; picked = true; rebuildRings();
+  setPicked(true); setHighlight(list);
   // Une bouteille seule, ou une bouteille de case dans un casier qui n'est plus en cases maçonnées : sa fiche
   if (u && (list.length === 1 || !racks[k]?.isCases)) return selectBottle(id);
   if (racks[k]?.isCases) return showCase(caseIdOf(id), list);
@@ -935,6 +940,8 @@ function goTo(id, ids = '') {
 
 // ---------- Fiche (panneau du bas) ----------
 let scanToken = 0;   // invalide une lecture (photo ou voix) arrivée après que le formulaire a été quitté ou redessiné
+/** Nouveau jeton de lecture : toute lecture (photo ou voix) lancée avant devient caduque. */
+function newScanToken() { return ++scanToken; }
 
 function openSheet(title, html, tall = false) {
   stopVoice(false);   // une autre fiche (ou la même redessinée) : on n'écoute plus
@@ -948,7 +955,7 @@ function closeSheet() {
   const had = selected; $('sheet').hidden = true; $('sheetBody').innerHTML = ''; hideHero(); selRing.visible = false; selected = null;
   // Bouteilles allumées depuis une fiche ou une liste : on les éteint en la fermant (sauf recherche en cours,
   // où la bouteille choisie reste entourée pour qu'on la retrouve)
-  if (had && !$('search').value.trim() && highlighted.length) { highlighted = []; rebuildRings(); }
+  if (had && !$('search').value.trim() && highlighted.length) setHighlight([]);
   if (had && view.mode === 'rack') {
     // Retour au cadrage du casier (après le zoom sur une case), en restant à hauteur de la case qu'on vient de quitter
     const rack = racks[view.key];
@@ -1109,7 +1116,7 @@ async function runScan() {
   if (form.dataset.scanning) return;   // une lecture est déjà en cours pour ce formulaire
   form.dataset.scanning = '1';
   const scanBtn = form.querySelector('[data-act=scan]'); if (scanBtn) scanBtn.disabled = true;
-  const token = ++scanToken, id = form.dataset.id, status = $('scanStatus');
+  const token = newScanToken(), id = form.dataset.id, status = $('scanStatus');
   const say = (cls, text) => { status.className = 'scan ' + cls; status.textContent = text; };
   say('busy', 'Lecture de l\'étiquette…');
   try {
@@ -1234,7 +1241,7 @@ async function runVoice({ audio, text }) {
   if (!audio && !String(text).trim()) { showVoiceZone('', 'Écrivez ou dictez quelques mots sur la bouteille, puis touchez « Remplir la fiche ».'); return; }
   form.dataset.scanning = '1';
   const btns = form.querySelectorAll('[data-act=voice], [data-act=voice-text], [data-act=scan]'); btns.forEach((b) => { b.disabled = true; });
-  const token = ++scanToken, id = form.dataset.id, status = $('scanStatus');
+  const token = newScanToken(), id = form.dataset.id, status = $('scanStatus');
   const say = (cls, msg) => { status.className = 'scan ' + cls; status.textContent = msg; };
   say('busy', 'Je remplis la fiche…');
   try {
@@ -1301,7 +1308,7 @@ $('sheetBody').addEventListener('click', async (e) => {
   const row = e.target.closest('[data-goto]');
   if (row) { goTo(row.dataset.goto, row.dataset.ids); return; }
   const hl = e.target.closest('[data-hl]');   // fiche Case : allumer les bouteilles d'un vin
-  if (hl) { highlighted = hl.dataset.hl.split(','); rebuildRings(); return; }
+  if (hl) { setHighlight(hl.dataset.hl.split(',')); return; }
   const act = e.target.closest('[data-act]')?.dataset.act; if (!act) return;
   const id = selected?.id, b = id && bottleAt(id);
   if (['add', 'edit', 'remove', 'drink', 'copy', 'move'].includes(act) && (!id || (act !== 'add' && !b))) return closeSheet();
@@ -1363,7 +1370,11 @@ $('sheetBody').addEventListener('click', async (e) => {
   else if (act === 'menu') showMenu();
   else if (act === 'settings') showSettings();
   else if (act === 'config-focus') showConfig(e.target.closest('[data-rack]')?.dataset.rack);
-  else if (act === 'adjust') startAdjust(e.target.closest('[data-rack]')?.dataset.rack);
+  else if (act === 'adjust') {
+    const k = e.target.closest('[data-rack]')?.dataset.rack;
+    // Fiche, mode copie et résultats fermés avant le réglage (la scène ne touche pas à l'interface)
+    if (racks[k]?.isCases) { if (adjust) endAdjust(false); closeSheet(); endMode(); $('results').hidden = true; startAdjust(k); }
+  }
   else if (act === 'rack-tools') { const k = e.target.closest('[data-rack]')?.dataset.rack; if (racks[k]) { showRack(k); showRackTools(k); } }
   else if (act === 'scan-settings') showScanSettings();
   else if (act === 'clear-col' || act === 'clear-row' || act === 'clear-rack') await clearPart(act);
@@ -1512,21 +1523,21 @@ function rowHtml({ b, ids, n }) {
 }
 function runSearch(show = true) {
   const q = norm($('search').value.trim()); $('searchClear').hidden = !q;
-  if (!q) { highlighted = []; picked = false; rebuildRings(); $('results').hidden = true; return; }
+  if (!q) { setPicked(false); setHighlight([]); $('results').hidden = true; return; }
   const words = q.split(/\s+/);
   const found = allBottles().filter((b) => { const h = haystack(b); return words.every((w) => h.includes(w)); }).sort(sortBottles);
   // Après le choix d'un résultat, refresh() (enregistrement, déplacement…) garde seulement ce vin entouré ;
   // retaper ou rouvrir la recherche (show) remontre tous les résultats.
-  if (show) picked = false;
+  if (show) setPicked(false);
   // (une bouteille choisie puis bue ou déplacée perd son anneau : pas d'anneau orange sur une place vide)
-  highlighted = picked ? highlighted.filter((id) => bottleAt(id)) : found.map((b) => b.id); rebuildRings();
+  setHighlight(picked ? highlighted.filter((id) => bottleAt(id)) : found.map((b) => b.id));
   if (!show) return;
   const rows = groupRows(found);
   $('results').innerHTML = rows.length ? rows.slice(0, 80).map(rowHtml).join('') + (rows.length > 80 ? `<div class="empty">… et ${rows.length - 80} autres</div>` : '')
     : '<div class="empty">Aucune bouteille enregistrée ne correspond</div>';
   // La fiche est masquée (pas fermée) : on cesse d'écouter et on ignore une lecture en cours, sinon l'enregistrement
   // continuerait à l'insu de l'utilisateur et partirait seul au bout d'une minute
-  if (!$('sheet').hidden) { stopVoice(false); scanToken++; }
+  if (!$('sheet').hidden) { stopVoice(false); newScanToken(); }
   $('results').hidden = false; $('sheet').hidden = true; hideHero();
 }
 $('search').addEventListener('input', () => runSearch());
@@ -1915,6 +1926,7 @@ const BACKUP_KEY = 'cave-derniere-sauvegarde';     // date (ms) de la dernière 
 const REMINDER_KEY = 'cave-dernier-rappel';        // date (ms) du dernier rappel de sauvegarde
 let copiesInfo = [];                                // résumé des copies gardées (sans les fiches), pour le menu
 let storageProtected = null;                        // réponse de l'iPhone à « protéger le stockage » (null : inconnue)
+function setStorageProtected(v) { storageProtected = v; }
 const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); return true; } catch { return false; } };
 
@@ -2051,7 +2063,7 @@ function frame(now) {
 if (new URLSearchParams(location.search).has('debug')) window.__cave = { tapSlot, selectSlot, saveRecord, deleteRecord, get store() { return store; }, records, view, hero, camera, get heroAnim() { return heroAnim; } };   // pour les tests automatiques
 (async function start() {
   try {
-    store = await openStore();
+    setStore(await openStore());
     for (const b of await store.getAll()) if (!b.vide) records.set(b.id, b);
   } catch (e) { console.error(e); toast('Stockage indisponible : les fiches ne seront pas enregistrées'); }
   let hasStoredConfig = true, storedConfig = null;
@@ -2116,7 +2128,7 @@ if (new URLSearchParams(location.search).has('debug')) window.__cave = { tapSlot
       'Sauvegarder', 'Plus tard').then((yes) => { if (yes) exportData(); });
   }
   // Demande à l'iPhone de ne jamais vider ce stockage pour faire de la place ; sa réponse est montrée dans le menu
-  navigator.storage?.persist?.().then((ok) => { storageProtected = !!ok; }).catch(() => {});
+  navigator.storage?.persist?.().then((ok) => { setStorageProtected(!!ok); }).catch(() => {});
   if (location.search.includes('maj=')) {   // retour d'une mise à jour forcée : on dit si elle a bien pris
     history.replaceState(null, '', './');
     let expected = ''; try { expected = sessionStorage.getItem('cave-maj-attendue') || ''; sessionStorage.removeItem('cave-maj-attendue'); } catch { /* sans stockage */ }
