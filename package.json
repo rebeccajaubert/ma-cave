@@ -5,7 +5,7 @@
   "description": "Ma Cave : maquette 3D d'une cave à vin, installable sur iPhone (PWA)",
   "type": "module",
   "scripts": {
-    "test": "node --test tests/",
+    "test": "node --test tests/*.test.js",
     "serve": "python3 -m http.server 8765"
   }
 }
