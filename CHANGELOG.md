@@ -5,6 +5,10 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), ver
 
 ## [Non publié]
 
+### Ajouté
+- **Disposition de la cave** (menu → *Rangement de la cave*) : on choisit le **texte écrit au sol** (« La Cave de Verdelot » par défaut), le côté de l'**entrée** (devant ou au fond ; la vue d'ensemble se place de ce côté et le texte se lit en entrant), et la **position de chaque casier** le long de la cave (▲ vers le devant / ▼ vers le fond, par 10 cm) ainsi que celle de l'**îlot** entre les deux murs (◀ / ▶). La cave s'allonge d'elle-même pour contenir les casiers.
+- Les bouteilles suivent toujours leur casier. La colonne 1 reste la plus proche de l'entrée : si l'entrée change de bout, les **numéros** de colonne s'inversent partout (fiche, liste, « Vider une colonne », séparations), les bouteilles ne bougent pas. De même, « gauche » et « droite » se disent toujours pour qui entre : avec l'entrée au fond, les noms des casiers et l'ordre de la barre du bas s'échangent.
+
 ### Technique
 - **Code réorganisé**, sans changement visible : le code est rangé dans `js/` (l'ancien `app.js` de 2 100 lignes est découpé en modules : scène 3D, gestes, fiche, photo et voix, recherche, menu, sauvegardes…) et la feuille de style dans `css/`. Carte des modules en tête de `js/util.js`.
 - De petits fichiers relais restent aux anciennes adresses pour qu'un téléphone encore en 1.0.0 puisse se mettre à jour (y compris avec « Mettre à jour l'application »).

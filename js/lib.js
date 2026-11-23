@@ -70,6 +70,8 @@ export const CONFIG_REV = 3;   // 3 (v0.4.0) : tailles de colonnes et de rangée
 export const DEFAULT_CONFIG = {
   nom: 'La Cave de Verdelot',
   rev: CONFIG_REV,
+  entree: 'avant',   // côté de l'entrée : 'avant' (devant) ou 'fond'
+  ilotX: 0,          // décalage de l'îlot vers le mur droit (m, négatif = vers le mur gauche)
   racks: {
     G: { style: 'cases', cols: 6, rows: 5 }, IG: { style: 'cases', cols: 6, rows: 5 },
     ID: { style: 'metal', cols: 36, rows: 15 }, D: { style: 'metal', cols: 36, rows: 15 },
@@ -80,10 +82,18 @@ export const DEFAULT_CONFIG = {
  * Remet une configuration au format actuel ({ nom, racks: { G: { style, cols, rows }, … } }), dans les limites.
  * Accepte les anciens formats : v1 ({ racks } sans type), v3 ({ cols, rowsMur, rowsIlot }).
  */
+/** Décalage maximal d'un casier le long de la cave, et de l'îlot vers un mur (garde 60 cm de passage), en mètres. */
+export const RACK_Z_MAX = 4, ILOT_X_MAX = 1.1;
+/** Décalage lu dans un réglage : un nombre, borné, arrondi au centimètre ; sinon 0. */
+const offset = (v, max) => { const n = Number(v); return Number.isFinite(n) ? Math.round(clamp(n, -max, max) * 100) / 100 || 0 : 0; };
+
 export function normalizeConfig(c) {
   const out = JSON.parse(JSON.stringify(DEFAULT_CONFIG));   // copie profonde (structuredClone n'existe pas avant iOS 15.4)
   if (!c || typeof c !== 'object') return out;
   if (c.nom && c.nom !== 'La Cave de Papa') out.nom = String(c.nom).slice(0, 40);
+  // Disposition (v1.1) : côté de l'entrée et décalages ; absents d'un ancien réglage → la disposition d'avant.
+  out.entree = c.entree === 'fond' ? 'fond' : 'avant';
+  out.ilotX = offset(c.ilotX, ILOT_X_MAX);
   const src = {};
   if (c.racks && typeof c.racks === 'object') Object.assign(src, c.racks);
   else if (c.cols) for (const k of RACK_ORDER) src[k] = { cols: c.cols, rows: k === 'IG' || k === 'ID' ? c.rowsIlot : c.rowsMur };
@@ -100,6 +110,8 @@ export function normalizeConfig(c) {
       cols: clamp(parseInt(r.cols) || out.racks[k].cols, 1, lim.cols),
       rows: clamp(rows, 1, lim.rows),
     };
+    // Décalage le long de la cave (m), positif = vers le devant ; écrit seulement s'il existe (réglage inchangé sinon)
+    const z = offset(r.z, RACK_Z_MAX); if (z) out.racks[k].z = z;
     // Cases maçonnées : largeur de chaque colonne et hauteur de chaque rangée (séparations réglées à la main).
     if (style === 'cases') {
       const st = STYLES.cases, fit = (arr, n, def) => Array.from({ length: n }, (_, i) => {
@@ -120,6 +132,8 @@ export function normalizeConfig(c) {
 export const LEGACY_CONFIG = {
   nom: DEFAULT_CONFIG.nom,
   rev: CONFIG_REV,
+  entree: 'avant',
+  ilotX: 0,
   racks: {
     G: { style: 'alveoles', cols: 12, rows: 5 }, IG: { style: 'alveoles', cols: 12, rows: 6 },
     ID: { style: 'alveoles', cols: 12, rows: 6 }, D: { style: 'alveoles', cols: 12, rows: 5 },
@@ -559,3 +573,40 @@ export function lastAtMost(edges, v) {
   while (i + 1 < edges.length && edges[i + 1] <= v) i++;
   return i;
 }
+
+/**
+ * Numéro de colonne affiché : 1 = la plus proche de l'entrée. Les colonnes ne bougent pas quand l'entrée change de
+ * côté (les fiches gardent leur index `c`) : seul le numéro montré à l'utilisateur suit l'entrée.
+ * @param {number} c index de la colonne (0 = côté devant de la cave)
+ * @param {number} cols nombre de colonnes du casier
+ * @param {'avant'|'fond'} entree côté de l'entrée
+ */
+export const colNumber = (c, cols, entree) => (entree === 'fond' ? cols - c : c + 1);
+/** Inverse de `colNumber` : index de la colonne qui porte le numéro `n` depuis l'entrée. */
+export const colIndex = (n, cols, entree) => (entree === 'fond' ? cols - n : n - 1);
+
+/**
+ * Longueur de la cave qui contient tous les casiers, décalés ou non : de part et d'autre du centre, la plus grande
+ * des demi-longueurs nécessaires (60 cm au-delà d'un casier mural ; 1,40 m au-delà de l'îlot, pour qu'on puisse en
+ * faire le tour). Sans décalage, c'est la longueur d'avant les casiers déplaçables.
+ * @param {{W: number, z: number, island: boolean}[]} racks longueur et décalage de chaque casier
+ * @returns {number} longueur en mètres
+ */
+export function caveLength(racks) {
+  let half = 0;
+  for (const r of racks) half = Math.max(half, Math.abs(r.z) + (r.island ? (r.W + 0.2) / 2 + 1.4 : r.W / 2 + 0.6));
+  return 2 * half;
+}
+
+const MIRROR = { G: 'D', D: 'G', IG: 'ID', ID: 'IG' };
+/**
+ * Casier qui porte le nom « vu depuis l'entrée ». Entrée au fond : on entre par l'autre bout, la gauche et la droite
+ * s'échangent ; le casier de clé `G` est alors à droite de qui entre. Les clés des fiches ne changent jamais.
+ * @param {'G'|'IG'|'ID'|'D'} k clé du casier
+ * @param {'avant'|'fond'} entree
+ */
+export const mirrorRack = (k, entree) => (entree === 'fond' ? MIRROR[k] || k : k);
+/** Nom affiché d'un casier, vu depuis l'entrée (« Mur gauche » = à gauche de qui entre). */
+export const rackLabel = (k, entree) => RACK_NAMES[mirrorRack(k, entree)] || k;
+/** Clés des casiers de gauche à droite pour qui entre (ordre de la barre du bas). */
+export const rackOrderFromEntrance = (entree) => ['G', 'IG', 'ID', 'D'].map((k) => mirrorRack(k, entree));

@@ -1,6 +1,6 @@
 // Cases maçonnées : chaque case est une pile de bouteilles (ajout en haut, retrait, capacité, vider).
-import { parseId, pushToPile, newBottleId, removeFromPile, STYLES, DEFAULT_STYLE, RACK_NAMES } from './lib.js';
-import { allBottles, persistBatch, records } from './data.js';
+import { parseId, pushToPile, newBottleId, removeFromPile, STYLES, DEFAULT_STYLE } from './lib.js';
+import { allBottles, colNo, rackName, persistBatch, records } from './data.js';
 import { inRack, racks, rk } from './scene.js';
 import { refresh } from './sheet.js';
 import { offerUndo } from './undo.js';
@@ -55,9 +55,9 @@ export function locText(id) {
   const { k, c, r, u } = parseId(id), b = u && records.get(id);
   // Bouteille de case maçonnée : on dit aussi où elle est dans la pile (comptée depuis le coin en bas à droite)
   const inPile = b ? ` · <b>${(b.pile ?? 0) + 1}<sup>e</sup></b> bouteille en partant du coin en bas à droite` : '';
-  return `<b>${RACK_NAMES[k] || k}</b> · ${styleOf(k).lieu} en colonne <b>${c + 1}</b> depuis l'entrée · rangée <b>${r + 1}</b> depuis le bas${inPile}`;
+  return `<b>${rackName(k)}</b> · ${styleOf(k).lieu} en colonne <b>${colNo(k, c)}</b> depuis l'entrée · rangée <b>${r + 1}</b> depuis le bas${inPile}`;
 }
 export function locShort(id) {
   const { k, c, r } = parseId(id);
-  return `${RACK_NAMES[k] || k} · col. ${c + 1} · rang ${r + 1}`;
+  return `${rackName(k)} · col. ${colNo(k, c)} · rang ${r + 1}`;
 }

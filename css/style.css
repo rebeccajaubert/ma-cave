@@ -206,3 +206,7 @@ body.adjusting #adjustBar { top: calc(var(--sat) + 12px); }
 .cave-note.warn { color: #f0c27a; }
 .cave-foot { text-align: center; color: #8fa3c0; font-size: 13px; margin: 20px 0 0; }
 #sheet.cave .btn { background: transparent; color: var(--cream); border-color: var(--gold); margin-top: 16px; }
+
+/* Rangement de la cave : boutons pour décaler un casier ou l'îlot (gros, côte à côte) */
+.shift { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 6px 0 4px; }
+.shift .btn { min-height: 52px; }

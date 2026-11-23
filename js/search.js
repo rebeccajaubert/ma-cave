@@ -1,8 +1,8 @@
 // Recherche de bouteilles et barre du bas (choix de la vue).
-import { norm, parseId, qty, caseIdOf, esc } from './lib.js';
+import { norm, parseId, qty, caseIdOf, esc, rackOrderFromEntrance } from './lib.js';
 import { stopVoice } from './autofill.js';
 import { locShort } from './cases.js';
-import { allBottles, bottleAt, typeOf } from './data.js';
+import { allBottles, bottleAt, config, rackName, typeOf } from './data.js';
 import { adjust, endAdjust, hideHero, highlighted, inRack, picked, setHighlight, setPicked, showOverview, showRack } from './scene.js';
 import { closeSheet, goTo, newScanToken } from './sheet.js';
 import { $ } from './util.js';
@@ -57,6 +57,12 @@ $('results').addEventListener('click', (e) => {
 });
 
 // ---------- Barre du bas : choisir la vue ----------
+// Barre du bas : casiers de gauche à droite pour qui entre, avec leur nom vu depuis l'entrée (au fond, gauche et
+// droite s'échangent ; chaque bouton garde la clé de son casier)
+for (const k of rackOrderFromEntrance(config.entree)) {
+  const b = $('nav').querySelector(`[data-view="${k}"]`);
+  if (b) { b.innerHTML = rackName(k).replace(', côté', '').replace(' ', '<br>'); $('nav').appendChild(b); }
+}
 $('nav').addEventListener('click', (e) => {
   const v = e.target.closest('button')?.dataset.view; if (!v) return;
   if (adjust) endAdjust(false);   // changer de vue abandonne le réglage en cours
