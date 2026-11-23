@@ -1,7 +1,7 @@
 // Tests de la pile des cases maçonnées : identifiants, ajout en haut, tassement au retrait, annulation, migration.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isValidId, parseId, caseIdOf, newBottleId, pileOf, pushToPile, removeFromPile, undoRemoval, normalizePile, migrateCaseRecords, placeLost } from '../lib.js';
+import { isValidId, parseId, caseIdOf, newBottleId, pileOf, pushToPile, removeFromPile, undoRemoval, normalizePile, migrateCaseRecords, placeLost } from '../js/lib.js';
 
 const b = (id, pile, extra = {}) => ({ id, pile, nom: id, ajout: 1, ...extra });
 
@@ -124,7 +124,7 @@ test('pile : ranger une fiche « à ranger » en haut de la pile, le reste atten
 });
 
 // « Annuler » après « Les ranger dans cette case » : seulement si rien n'a changé depuis (sinon on écraserait des données)
-import { undoPlaceLost } from '../lib.js';
+import { undoPlaceLost } from '../js/lib.js';
 const placed = (list, lost, cap) => { const r = placeLost([...list, lost], lost, cap, () => 0.5); return { r, now: apply([...list, lost], r.put).filter((x) => !r.remove.includes(x.id)) }; };
 
 test('pile : annuler le rangement d\'une fiche « à ranger » (une partie rangée, une bouteille posée dessus entre-temps)', () => {

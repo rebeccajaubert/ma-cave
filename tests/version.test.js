@@ -1,9 +1,10 @@
 // Vérifie que le numéro de version est le même partout (version.js, package.json, CHANGELOG.md).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 
 const read = (f) => readFileSync(new URL(`../${f}`, import.meta.url), 'utf8');
+const modules = readdirSync(new URL('../js', import.meta.url)).filter((f) => f.endsWith('.js')).map((f) => `js/${f}`);
 
 test('version cohérente entre version.js, package.json et CHANGELOG.md', () => {
   const fromJs = /APP_VERSION\s*=\s*'([^']+)'/.exec(read('version.js'))?.[1];
@@ -17,7 +18,7 @@ test('version cohérente entre version.js, package.json et CHANGELOG.md', () => 
 test('la liste des fichiers (version.js) contient toute l\'application et ils existent', () => {
   const list = /APP_FILES\s*=\s*\[([^\]]+)\]/.exec(read('version.js'))?.[1] ?? '';
   const files = [...list.matchAll(/'([^']+)'/g)].map((m) => m[1]);
-  for (const f of ['index.html', 'style.css', 'app.js', 'lib.js', 'db.js', 'scan.js', 'version.js', 'vendor/three.module.min.js', 'manifest.webmanifest']) {
+  for (const f of ['index.html', 'css/style.css', ...modules, 'version.js', 'vendor/three.module.min.js', 'manifest.webmanifest']) {
     assert.ok(files.includes(f), `${f} manque dans APP_FILES (version.js)`);
   }
   for (const f of files.filter((x) => x !== './')) assert.doesNotThrow(() => read(f), `${f} est listé mais n'existe pas`);
@@ -27,10 +28,11 @@ test('la liste des fichiers (version.js) contient toute l\'application et ils ex
 test('index.html charge les fichiers avec le numéro de la version (?v=), modules compris', () => {
   const html = read('index.html'), version = /APP_VERSION\s*=\s*'([^']+)'/.exec(read('version.js'))?.[1];
   const tags = [...html.matchAll(/\?v=([0-9.]+)/g)].map((m) => m[1]);
-  assert.ok(tags.length >= 6, 'style.css, version.js, app.js et les modules doivent avoir ?v=');
+  assert.ok(tags.length >= 6, 'css/style.css, version.js, js/app.js et les modules doivent avoir ?v=');
   for (const t of tags) assert.equal(t, version, `?v=${t} ne correspond pas à la version ${version}`);
-  for (const f of ['style.css', 'version.js', 'app.js', './lib.js', './db.js', './scan.js']) assert.ok(html.includes(`${f}?v=`), `${f} sans ?v=`);
-  // tout module importé par app.js doit être dans la table d'import, sinon Safari pourrait en garder une vieille copie
-  const imports = [...read('app.js').matchAll(/from '(\.\/[^']+)'/g)].map((m) => m[1]).filter((f) => !f.includes('vendor/'));
-  for (const f of imports) assert.ok(html.includes(`"${f}": "${f}?v=`), `${f} manque dans la table d'import de index.html`);
+  for (const f of ['css/style.css', 'version.js', 'js/app.js']) assert.ok(html.includes(`${f}?v=`), `${f} sans ?v=`);
+  // tout module importé par un autre module de js/ doit être dans la table d'import, sinon Safari pourrait en garder une vieille copie
+  for (const m of modules) {
+    for (const [, f] of read(m).matchAll(/from '\.\/([^']+)'/g)) assert.ok(html.includes(`"./js/${f}": "./js/${f}?v=`), `js/${f} (importé par ${m}) manque dans la table d'import de index.html`);
+  }
 });

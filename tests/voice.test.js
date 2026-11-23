@@ -1,7 +1,7 @@
 // Tests de la saisie à la voix : requête et réponse Gemini (scan.js), fusion dans la fiche (lib.js). Aucun appel réseau réel.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { voicePrompt, buildVoiceRequest, parseVoiceResponse, readVoice, scanErrorMessage } from '../scan.js';
+import { voicePrompt, buildVoiceRequest, parseVoiceResponse, readVoice, scanErrorMessage } from '../js/scan.js';
 
 const reply = (obj) => ({ candidates: [{ content: { parts: [{ text: JSON.stringify(obj) }] } }] });
 const ok = (body) => ({ ok: true, status: 200, json: async () => body });
@@ -68,7 +68,7 @@ test('readVoice : clé en en-tête, jamais dans l\'URL ; sans clé -> nokey', as
 test('scanErrorMessage connaît « empty »', () => assert.match(scanErrorMessage({ kind: 'empty' }), /rien entendu/));
 
 // ---------- Fusion dans la fiche (lib.js) ----------
-import { mergeVoice } from '../lib.js';
+import { mergeVoice } from '../js/lib.js';
 
 const F = ['nom', 'couleur', 'millesime', 'apogee', 'appellation', 'region', 'cepage', 'quantite', 'prix', 'note', 'commentaire'];
 const out = (o) => ({ transcription: 'x', nom: '', millesime: '', apogee: '', appellation: '', region: '', cepage: '', couleur: '', quantite: null, prix: '', note: '', commentaire: '', ...o });
@@ -96,7 +96,7 @@ test('mergeVoice : un champ tapé à la main après un remplissage vocal n\'est 
 
 // Google refuse une valeur vide dans une énumération du schéma (« enum[0]: cannot be empty ») : la requête avec schéma
 // échouait toujours (400) et seule la seconde, sans schéma, passait.
-import { buildRequest } from '../scan.js';
+import { buildRequest } from '../js/scan.js';
 test('schémas de réponse : aucune valeur vide dans les énumérations (photo et voix)', () => {
   const enums = (schema) => Object.values(schema.properties).flatMap((p) => p.enum || []);
   const photo = buildRequest('data:image/png;base64,AAAA').generationConfig.responseSchema;
@@ -105,7 +105,7 @@ test('schémas de réponse : aucune valeur vide dans les énumérations (photo e
 });
 
 // ---------- Relecture finale ----------
-import { parseLabelResponse } from '../scan.js';
+import { parseLabelResponse } from '../js/scan.js';
 
 test('couleur : « rosé » avec accent est reconnu (photo et voix)', () => {
   assert.equal(parseVoiceResponse(reply({ transcription: 'un rosé', couleur: 'Rosé' })).couleur, 'rose');

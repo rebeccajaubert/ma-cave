@@ -3,6 +3,13 @@
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), versionnement [sémantique](https://semver.org/lang/fr/) :
 `MAJEUR.MINEUR.CORRECTIF`. Le numéro de version est défini dans `version.js` (voir README, « Publier une version »).
 
+## [1.0.1] - 2026-11-23
+
+### Technique
+- **Code réorganisé**, sans changement visible : le code est rangé dans `js/` (l'ancien `app.js` de 2 100 lignes est découpé en modules : scène 3D, gestes, fiche, photo et voix, recherche, menu, sauvegardes…) et la feuille de style dans `css/`. Carte des modules en tête de `js/util.js`.
+- De petits fichiers relais restent aux anciennes adresses pour qu'un téléphone encore en 1.0.0 puisse se mettre à jour (y compris avec « Mettre à jour l'application »).
+- Le test des identifiants non déclarés vérifie aussi qu'aucun module ne réassigne une variable d'un autre.
+
 ## [1.0.0] - 2026-11-23
 
 ### Ajouté

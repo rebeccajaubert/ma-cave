@@ -1,7 +1,7 @@
 // Tests de la lecture d'étiquette (scan.js) avec un faux `fetch` : aucune requête réseau réelle.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cleanApiKey, buildRequest, parseLabelResponse, scanLabel, testApiKey, splitDataUrl, ScanError, scanErrorMessage, MODELS } from '../scan.js';
+import { cleanApiKey, buildRequest, parseLabelResponse, scanLabel, testApiKey, splitDataUrl, ScanError, scanErrorMessage, MODELS } from '../js/scan.js';
 
 const PHOTO = 'data:image/jpeg;base64,AAAA';
 const reply = (obj) => ({ candidates: [{ content: { parts: [{ text: typeof obj === 'string' ? obj : JSON.stringify(obj) }] } }] });
@@ -110,7 +110,7 @@ test('cleanApiKey : tolérant sur le format, strict sur les espaces et la longue
 });
 
 // Clé Gemini sur l'appareil : nettoyée à l'enregistrement, effaçable, et jamais d'erreur si le stockage est bloqué
-import { getApiKey, setApiKey, clearApiKey } from '../scan.js';
+import { getApiKey, setApiKey, clearApiKey } from '../js/scan.js';
 test('clé : enregistrée nettoyée, relue, effacée ; stockage bloqué -> chaîne vide', () => {
   const before = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
   const store = new Map(), fake = (o) => Object.defineProperty(globalThis, 'localStorage', { value: o, configurable: true, writable: true });

@@ -1,4 +1,4 @@
-// Détecte les identifiants utilisés mais jamais déclarés ni importés (ex. une déclaration
+// Détecte les identifiants utilisés mais jamais déclarés ni importés, et les variables importées réassignées (ex. une déclaration
 // supprimée par erreur : `highlighted` en 0.2.0 et 0.3.0). Analyse sans tenir compte des portées :
 // elle rate un nom déclaré ailleurs dans le fichier, mais repère tout nom déclaré nulle part.
 // Utilise l'analyseur JavaScript fourni avec Node (lancer avec --expose-internals).
@@ -46,7 +46,17 @@ function undeclared(file) {
       if (anc.some((a) => (a.type === 'AssignmentExpression' && a.left === n) || ((a.type === 'ForOfStatement' || a.type === 'ForInStatement') && a.left === n))) used.push(n);
     },
   });
-  return used.filter((n) => !declared.has(n.name) && !GLOBALS.has(n.name)).map((n) => `${file}:${n.loc.start.line} ${n.name}`);
+  // Une liaison importée ne se réassigne pas (erreur à l'exécution) : passer par une fonction du module qui la possède
+  const imported = new Set(); walk.simple(ast, { ImportSpecifier: (n) => imported.add(n.local.name), ImportDefaultSpecifier: (n) => imported.add(n.local.name) });
+  const reassigned = [];
+  walk.simple(ast, {
+    AssignmentExpression: (n) => { if (n.left.type === 'Identifier' && imported.has(n.left.name)) reassigned.push(n.left); },
+    UpdateExpression: (n) => { if (n.argument.type === 'Identifier' && imported.has(n.argument.name)) reassigned.push(n.argument); },
+  });
+  return [
+    ...used.filter((n) => !declared.has(n.name) && !GLOBALS.has(n.name)).map((n) => `${file}:${n.loc.start.line} ${n.name}`),
+    ...reassigned.map((n) => `${file}:${n.loc.start.line} ${n.name} (réassigne une variable importée d'un autre module)`),
+  ];
 }
 
 const problems = process.argv.slice(2).flatMap(undeclared);

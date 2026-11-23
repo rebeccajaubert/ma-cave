@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="icon" type="image/png" href="icons/icon-180.png">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="stylesheet" href="style.css?v=1.0.0">
+<link rel="stylesheet" href="css/style.css?v=1.0.1">
 </head>
 <body>
 <canvas id="scene"></canvas>
@@ -58,8 +58,8 @@
 <input id="importInput" type="file" accept="application/json,.json" hidden>
 <!-- Le numéro ?v= change à chaque version (il doit être égal à APP_VERSION, un test le vérifie) :
      Safari ne peut ainsi jamais réutiliser une copie périmée d'un fichier après une mise à jour. -->
-<script type="importmap">{ "imports": { "./lib.js": "./lib.js?v=1.0.0", "./db.js": "./db.js?v=1.0.0", "./scan.js": "./scan.js?v=1.0.0" } }</script>
-<script src="version.js?v=1.0.0"></script>
-<script type="module" src="app.js?v=1.0.0"></script>
+<script type="importmap">{ "imports": { "./js/autofill.js": "./js/autofill.js?v=1.0.1", "./js/backup.js": "./js/backup.js?v=1.0.1", "./js/cases.js": "./js/cases.js?v=1.0.1", "./js/data.js": "./js/data.js?v=1.0.1", "./js/db.js": "./js/db.js?v=1.0.1", "./js/demo.js": "./js/demo.js?v=1.0.1", "./js/lib.js": "./js/lib.js?v=1.0.1", "./js/menu.js": "./js/menu.js?v=1.0.1", "./js/scan.js": "./js/scan.js?v=1.0.1", "./js/scene.js": "./js/scene.js?v=1.0.1", "./js/search.js": "./js/search.js?v=1.0.1", "./js/sheet.js": "./js/sheet.js?v=1.0.1", "./js/touch.js": "./js/touch.js?v=1.0.1", "./js/undo.js": "./js/undo.js?v=1.0.1", "./js/updates.js": "./js/updates.js?v=1.0.1", "./js/util.js": "./js/util.js?v=1.0.1" } }</script>
+<script src="version.js?v=1.0.1"></script>
+<script type="module" src="js/app.js?v=1.0.1"></script>
 </body>
 </html>
